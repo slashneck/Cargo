@@ -1,0 +1,9 @@
+node_modules/
+dist/
+snapshots/
+src/setup/bin/
+src/setup/obj/
+*.log
+.DS_Store
+Thumbs.db
+Cargo Demo/

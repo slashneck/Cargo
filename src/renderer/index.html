@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: cargo-media:; media-src cargo-media:; connect-src 'none'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>Cargo</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="titlebar"></header>
+      <div id="workspace"></div>
+    </div>
+    <div id="drop-overlay" hidden>
+      <div class="drop-card">
+        <div class="drop-icon"></div>
+        <div class="drop-title">Drop to scan</div>
+        <div class="drop-sub">After Effects projects (.aep, .aepx) or folders containing them</div>
+      </div>
+    </div>
+    <div id="layers"></div>
+    <div id="toasts" role="status" aria-live="polite"></div>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

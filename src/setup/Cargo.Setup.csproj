@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- .NET Framework 4.8 ships with Windows 10 and 11, so the setup runs on a fresh PC without installing anything. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>CargoSetup</AssemblyName>
+    <RootNamespace>CargoSetup</RootNamespace>
+    <ApplicationIcon>..\..\build\icon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.0</Version>
+    <Product>Cargo Setup</Product>
+    <Description>Cargo Setup</Description>
+    <Copyright>Copyright (c) 2026 slashneck</Copyright>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- 64-bit when possible, so setup can see which Cargo.exe processes run from the install folder. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+    <EmbeddedResource Include="..\..\build\icon.ico" LogicalName="cargo.ico" />
+    <!-- build-release.ps1 passes the packed app in with -p:PayloadZip=... -->
+    <EmbeddedResource Include="$(PayloadZip)" LogicalName="payload.zip" Condition="'$(PayloadZip)' != ''" />
+  </ItemGroup>
+
+</Project>

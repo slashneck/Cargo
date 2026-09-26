@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1c1c1c"/>
+      <stop offset="1" stop-color="#050505"/>
+    </linearGradient>
+    <filter id="glow" x="-10%" y="-300%" width="120%" height="700%"><feGaussianBlur stdDeviation="22"/></filter>
+  </defs>
+  <rect x="48" y="48" width="928" height="928" rx="210" fill="url(#bg)"/>
+  <rect x="49.5" y="49.5" width="925" height="925" rx="208.5" fill="none" stroke="#fff" stroke-opacity=".1" stroke-width="3"/>
+  <rect x="192" y="322" width="640" height="380" rx="46" fill="none" stroke="#fff" stroke-width="46"/>
+       <path d="M320 404v216M416 404v216M512 404v216M608 404v216" stroke="#fff" stroke-width="38" stroke-linecap="round"/>
+       <path d="M712 322v380" stroke="#fff" stroke-width="38"/>
+  <path d="M112 512h800" stroke="#00d4ff" stroke-width="96" stroke-linecap="round" opacity=".28" filter="url(#glow)"/>
+       <path d="M112 512h800" stroke="#00d4ff" stroke-width="40" stroke-linecap="round"/>
+</svg>

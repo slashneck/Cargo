@@ -1,0 +1,71 @@
+{
+  "name": "cargo",
+  "productName": "Cargo",
+  "version": "1.0.0",
+  "description": "Scan After Effects projects without After Effects: see every file they use, find what's unused or missing, and package, archive or clean up.",
+  "main": "src/main/main.js",
+  "homepage": "https://github.com/slashneck/Cargo",
+  "author": "slashneck",
+  "license": "MIT",
+  "private": true,
+  "type": "commonjs",
+  "keywords": [
+    "after-effects",
+    "aep",
+    "collect-files",
+    "footage",
+    "video-editing"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "test": "node --test \"test/*.test.js\"",
+    "icons": "electron scripts/make-icons.js",
+    "pack": "electron-builder --win dir",
+    "release": "powershell -ExecutionPolicy Bypass -File build-release.ps1"
+  },
+  "devDependencies": {
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
+    "yauzl": "^3.4.0"
+  },
+  "dependencies": {
+    "yazl": "^3.3.1"
+  },
+  "build": {
+    "appId": "io.github.slashneck.cargo",
+    "productName": "Cargo",
+    "copyright": "Copyright (c) 2026 slashneck",
+    "directories": {
+      "output": "dist/electron",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/main/**/*",
+      "src/core/**/*",
+      "src/renderer/**/*",
+      "build/icon.png",
+      "package.json",
+      "LICENSE"
+    ],
+    "asar": true,
+    "electronLanguages": [
+      "en-US"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": "dir",
+      "signAndEditExecutable": true
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.video",
+      "target": "dmg"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": "AppImage",
+      "category": "Video"
+    }
+  }
+}
