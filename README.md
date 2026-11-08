@@ -29,21 +29,28 @@ client, archive it to another drive, or clean up what you don't need anymore.
 
 ## Features
 
-**Every file at a glance.** Footage, audio, image sequences, stills, graphics, data files, samples, recordings and
-renders, with size, resolution, duration, frame rate and where they sit in your project. Thumbnails and a preview for images, video and audio.
-Search, filter by type or status and sort however you like, even with thousands of items.
+| Program | Project files | What Cargo shows |
+| --- | --- | --- |
+| After Effects | `.aep`, `.aepx` | footage, audio, sequences, stills, graphics and data files; comps; effects |
+| FL Studio | `.flp` | samples, recordings, renders and stock samples; patterns and the playlist; plugins |
 
-**Used, unused, missing.** An item counts as used when a layer in any composition uses it. Data files that are only read
-by expressions (`footage("scores.json")`) count too. Green is used, yellow is used but missing, red is unused. For every
-file you see which comps use it, and for every comp which files it pulls in, through all its precomps.
+**Every file at a glance.** Size, resolution, duration, frame rate and where each file sits in your project. Thumbnails and
+a preview for images, video and audio. Search, filter by type or status and sort however you like, even with thousands
+of items.
 
-**Find missing footage.** Cargo looks on your other drives, around the project and in folders you add, lets you confirm
+**Used, unused, missing.** Green is used, yellow is used but missing, red is unused, and purple is on disk but not in the
+project at all. In After Effects an item counts as used when a layer in any composition uses it, or an expression reads
+it (`footage("scores.json")`). In FL Studio a sample counts when it's on the playlist, or its channel plays notes in a
+pattern that is. For every file you see which comps or patterns use it, and for every comp or pattern which files it
+pulls in.
+
+**Find missing files.** Cargo looks on your other drives, around the project and in folders you add, lets you confirm
 each match or pick the file yourself, and saves a relinked copy of the project.
 
-**Clean up.** Send unused files to the Recycle Bin, or tick any files you like, or clear out all of a project's media in
-one go. Favorites, files tagged `keep` and footage another open project still needs are never picked for you.
-**Organize** sorts the footage into tidy folders and saves a project that points to them. **Archive** copies a finished
-project with all its footage to another drive, checks the copy, and can then remove the originals.
+**Clean up.** Send unused files and leftovers to the Recycle Bin, tick any files you like, or clear out all of a
+project's media in one go. Favorites, files tagged `keep` and files another project still needs are never picked for
+you. **Organize** sorts the files into tidy folders and saves a project that points to them. **Archive** copies a
+finished project with all its files to another drive, checks the copy, and can then remove the originals.
 
 **Insights.** How big the project really is, how much you'd save by deleting what's unused, how long it takes to send,
 the largest files, and which comps or patterns are the heaviest. The effects and plugins tab lists every plugin the
@@ -134,8 +141,9 @@ npm test             # parser, packaging and cleanup tests
 .\build-release.ps1  # setup, portable zip, checksums and source zip in dist
 ```
 
-`node scripts/demo-project.js "<folder>"` creates a small demo project with real footage, a missing file, unused files
-and a duplicate to try things on.
+`node scripts/demo-project.js "<folder>"` creates a small After Effects demo project with real footage, a missing file,
+unused files and a duplicate to try things on. Add `--fl` for an FL Studio song with its own recording folder, deleted
+takes and a second song that shares a take.
 
 ## License
 
