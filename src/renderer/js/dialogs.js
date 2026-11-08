@@ -1,6 +1,6 @@
 // The larger dialogs: package, archive, organize, delete unused, find missing, help.
 
-import { state, emit } from './state.js';
+import { state, emit, labels, appName } from './state.js';
 import { modal, runJob, errorDialog, toast, confirmDialog } from './ui.js';
 import { h, btn, iconBtn, replace, checkbox, fmtBytes, fmtTime, plural, debounce, basename, dirname, STATUS_LABEL } from './util.js';
 import { icon } from './icons.js';
@@ -15,6 +15,31 @@ const LAYOUTS = [
   ['date', 'By date modified (year / month)'],
   ['flat', 'Everything in one folder'],
 ];
+
+const FL_LAYOUTS = [
+  ['flat', 'Next to the project file (FL Studio looks there)'],
+  ['type', 'By type — Recordings, Renders, Samples'],
+  ['date', 'By date modified (year / month)'],
+];
+
+/** Layout choices for a format; FL projects have no folders or resolutions to sort by. */
+function layoutsFor(format, { withDate = false } = {}) {
+  const list = format === 'flp' ? FL_LAYOUTS : LAYOUTS;
+  return withDate ? list : list.filter(([k]) => k !== 'date');
+}
+
+function defaultLayout(format) {
+  const s = state.store.settings;
+  return format === 'flp' ? s.packageLayoutFl || 'flat' : s.packageLayout || 'type';
+}
+
+function layoutSetting(format, layout) {
+  return format === 'flp' ? { packageLayoutFl: layout } : { packageLayout: layout };
+}
+
+function projectExt(p) {
+  return (/\.[^.\\/]+$/.exec(p.filePath) || ['.aep'])[0];
+}
 
 function today() {
   const d = new Date();
@@ -76,10 +101,20 @@ async function saveSettings(patch) {
  * the project at the package's real location (that path contains user and
  * folder names) and shipping the untouched original project.
  */
-function privacyOptions(opts, { withOriginal = true } = {}) {
-  const relinkBox = checkbox({ checked: opts.relink, label: 'Point the packaged project to the packaged files', hint: 'Your original project is never changed. A “Relink Footage” script is included as a fallback.', onchange: (v) => { opts.relink = v; paint(); } });
+function privacyOptions(opts, { withOriginal = true, format = 'aep' } = {}) {
+  const fl = format === 'flp';
+  const relinkBox = checkbox({ checked: opts.relink, label: 'Point the packaged project to the packaged files', hint: fl ? 'Your original project is never changed. FL Studio also finds samples next to the project.' : 'Your original project is never changed. A “Relink Footage” script is included as a fallback.', onchange: (v) => { opts.relink = v; paint(); } });
   const originalBox = withOriginal ? checkbox({ checked: opts.includeOriginal, label: 'Also include the untouched original project', hint: 'Saved in an “Original Project” folder', onchange: (v) => (opts.includeOriginal = v) }) : null;
-  const note = h('div.notice.info', icon('shield'), h('div', 'The packaged project points to a neutral folder named after the package, and its save history is removed. Extract the package to C:\\ or run the included “Relink Footage” script to reconnect the footage.'));
+  const note = h(
+    'div.notice.info',
+    icon('shield'),
+    h(
+      'div',
+      fl
+        ? 'Sample paths point to a neutral folder named after the package, and the licensee name, data folder and project dates are removed. FL Studio finds the samples next to the project when it’s opened from the package.'
+        : 'The packaged project points to a neutral folder named after the package, and its save history is removed. Extract the package to C:\\ or run the included “Relink Footage” script to reconnect the footage.',
+    ),
+  );
   const privateBox = checkbox({ checked: opts.privateMode, label: 'Private package', hint: 'Keeps paths, your user and computer name, dates and version info out of the package.', onchange: (v) => { opts.privateMode = v; paint(); } });
   const setDisabled = (label, disabled) => {
     if (!label) return;
@@ -103,9 +138,10 @@ export async function packageDialog({ assetIds = null, title = null } = {}) {
     format: s.packageFormat || 'zip',
     destDir: s.packageDest || dirname(p.filePath),
     includeUnused: !!s.packageIncludeUnused,
-    layout: s.packageLayout || 'type',
+    layout: defaultLayout(p.format),
     relink: s.packageRelink !== false,
     privateMode: s.packagePrivate !== false,
+    includeStock: false,
     includeOriginal: false,
     name: `${safeName(title || p.name)}_Package_${today()}`,
     assetIds,
@@ -129,6 +165,7 @@ export async function packageDialog({ assetIds = null, title = null } = {}) {
         fileNote,
         pv.missing ? h('div.notice.warn', icon('alert'), h('div', h('b', `${plural(pv.missing, 'missing file')}`), ' can’t be included. Use Find Missing first if you have them somewhere.')) : null,
         pv.unused && !opts.includeUnused ? h('div.notice.info', { style: { marginTop: pv.missing ? '8px' : 0 } }, icon('info'), h('div', `${plural(pv.unused, 'unused item')} (${fmtBytes(pv.unusedBytes)}) will be left out.`)) : null,
+        pv.stock && !opts.includeStock ? h('div.dim', { style: { marginTop: '8px' } }, `${plural(pv.stock, 'FL Studio stock sample')} left out; they come with FL Studio.`) : null,
       );
       replace(sample, ...pv.sample.slice(0, 200).map((rel) => h('div.fl-row', { style: { gridTemplateColumns: '18px minmax(0,1fr)' } }, icon('file', 'sm'), h('span.mono.ellipsis', { title: rel }, rel))));
       if (!pv.files) replace(sample, h('div.fl-row', h('span'), h('span.dim', 'No files to include.')));
@@ -142,17 +179,22 @@ export async function packageDialog({ assetIds = null, title = null } = {}) {
 
   const m = modal({
     title: assetIds ? `Package “${title}”` : 'Package project',
-    subtitle: assetIds ? 'The project plus only the files this composition uses.' : 'The project file and every file it uses, ready to hand off, archive or sell.',
+    subtitle: assetIds ? `The project plus only the files this ${labels().comp.toLowerCase()} uses.` : 'The project file and every file it uses, ready to hand off, archive or sell.',
     icon: 'package',
     width: 'wide',
     body: [
       h('div.fields-2', h('div.field', h('div.label', 'Format'), seg([['zip', 'Zip file', 'zip'], ['folder', 'Folder', 'folder']], opts.format, (v) => { opts.format = v; refresh(); })), h('div.field', h('label', 'Name'), nameInput)),
       folderField('Save to', opts.destDir, (v) => { opts.destDir = v; refresh(); }, { title: 'Where should the package go?' }),
       h('div.fields-2',
-        h('div.field', h('label', 'Organize files'), select(LAYOUTS.filter(([k]) => k !== 'date'), opts.layout, (v) => { opts.layout = v; refresh(); })),
-        h('div.field', h('div.label', 'Include'), checkbox({ checked: opts.includeUnused, label: 'Unused footage too', hint: 'Off keeps the package small', onchange: (v) => { opts.includeUnused = v; refresh(); } })),
+        h('div.field', h('label', 'Organize files'), select(layoutsFor(p.format), opts.layout, (v) => { opts.layout = v; refresh(); })),
+        h(
+          'div.field',
+          h('div.label', 'Include'),
+          checkbox({ checked: opts.includeUnused, label: p.format === 'flp' ? 'Unused samples too' : 'Unused footage too', hint: 'Off keeps the package small', onchange: (v) => { opts.includeUnused = v; refresh(); } }),
+          p.format === 'flp' ? checkbox({ checked: false, label: 'FL Studio stock samples too', hint: 'They come with FL Studio', onchange: (v) => { opts.includeStock = v; refresh(); } }) : null,
+        ),
       ),
-      privacyOptions(opts),
+      privacyOptions(opts, { format: p.format }),
       summary,
       fileNote,
       h('details', h('summary', { style: { cursor: 'pointer', color: 'var(--text-3)' } }, 'Preview the package layout'), h('div', { style: { marginTop: '8px' } }, sample)),
@@ -163,7 +205,7 @@ export async function packageDialog({ assetIds = null, title = null } = {}) {
   refresh();
   if ((await m.result) !== 'go') return;
 
-  await saveSettings({ packageFormat: opts.format, packageDest: opts.destDir, packageIncludeUnused: opts.includeUnused, packageLayout: opts.layout, packageRelink: opts.relink, packagePrivate: opts.privateMode });
+  await saveSettings({ packageFormat: opts.format, packageDest: opts.destDir, packageIncludeUnused: opts.includeUnused, ...layoutSetting(p.format, opts.layout), packageRelink: opts.relink, packagePrivate: opts.privateMode });
   try {
     const r = await runJob(opts.format === 'zip' ? 'Creating zip' : 'Copying files', (jobId) => api.packageProject(p.id, opts, jobId), { subtitle: opts.name });
     await refreshStore();
@@ -237,22 +279,29 @@ export async function deleteUnusedDialog() {
     h(
       'div.fl-row',
       checkbox({ checked: true, onchange: (on) => { if (on) chosen.add(g.id); else chosen.delete(g.id); updateTotals(); } }),
-      h('div', { style: { minWidth: 0 } }, h('div.ellipsis', { style: { color: 'var(--text)' } }, g.name), h('div.ellipsis.dimmer', { title: g.folder, style: { fontSize: '11px' } }, g.files.length > 1 ? `${g.files.length} frames · ${g.folder}` : g.folder)),
+      h(
+        'div',
+        { style: { minWidth: 0 } },
+        h('div.row', { style: { gap: '8px' } }, h('span.ellipsis', { style: { color: 'var(--text)' } }, g.name), g.leftover ? h('span.pill.leftover', 'Not in project') : h('span.pill.unused', 'Unused')),
+        h('div.ellipsis.dimmer', { title: g.folder, style: { fontSize: '11px' } }, g.files.length > 1 ? `${g.files.length} frames · ${g.folder}` : g.folder),
+      ),
       h('div.num', { style: { textAlign: 'right' } }, fmtBytes(g.size)),
     ),
   );
   updateTotals();
   const m = modal({
     title: 'Delete unused files',
-    subtitle: 'Files that no composition in this project uses.',
+    subtitle: p.totals.leftoverCount ? 'Files the project doesn’t use, and leftovers no project uses.' : 'Files the project doesn’t use.',
     icon: 'trash',
     tone: 'bad',
     width: 'wide',
     body: [
-      h('div.notice.info', icon('info'), h('div', 'Files go to the ', h('b', 'Recycle Bin'), ', so you can restore them. The project still lists these items — in After Effects, ', h('b', 'File › Dependencies › Remove Unused Footage'), ' removes them from the project too.')),
+      h('div.notice.info', icon('info'), h('div', 'Files go to the ', h('b', 'Recycle Bin'), ', so you can restore them. ', labels().removeUnusedHint)),
       h('div.file-list', { style: { maxHeight: '340px' } }, h('div.fl-row.fl-head', h('span'), h('span', `${plan.groups.length} unused items`), h('span', { style: { textAlign: 'right' } }, 'Size')), ...rows),
       plan.skipped.length ? skippedList(plan.skipped) : null,
-      h('div.notice.warn', icon('alert'), h('div', 'Other projects that use these files are only protected if they are open in Cargo (Batch). Tag files as ', h('b', 'keep'), ' to always protect them.')),
+      p.leftoverInfo
+        ? h('div.dim', `Files used by the ${plural(p.leftoverInfo.projectsChecked, 'other project')} Cargo checked, by projects open in Batch, favorites and files tagged “keep” are never listed.`)
+        : h('div.notice.warn', icon('alert'), h('div', 'Other projects that use these files are only protected if they are open in Cargo (Batch). Tag files as ', h('b', 'keep'), ' to always protect them.')),
     ],
     footer: (close) => [h('div.info', total), btn('Cancel', { onclick: () => close(null) }), go],
   });
@@ -302,7 +351,7 @@ export async function deleteAssetsDialog({ assetIds = null } = {}) {
     go.lastChild.textContent = files ? `Move ${plural(files, 'file')} to Recycle Bin` : 'Nothing selected';
     go.disabled = !files;
     usedNote.hidden = !used;
-    replace(usedNote.lastChild, h('b', `${plural(used, 'item')} ${used === 1 ? 'is' : 'are'} used in compositions. `), 'After Effects will show them as missing.');
+    replace(usedNote.lastChild, h('b', `${plural(used, 'item')} ${used === 1 ? 'is' : 'are'} used in the project. `), `${appName()} will show them as missing.`);
   };
   const rows = plan.groups.map((g) =>
     h(
@@ -344,7 +393,7 @@ export async function deleteAssetsDialog({ assetIds = null } = {}) {
   if (all || used) {
     const ok = await confirmDialog({
       title: all ? `Delete all media of “${p.name}”?` : 'Delete files the project uses?',
-      message: `${plural(files.length + (includeProject ? 1 : 0), 'file')} (${fmtBytes(groups.reduce((t, g) => t + g.size, 0))}) go to the Recycle Bin.${used ? ` ${plural(used, 'item')} used in compositions will show as missing in After Effects.` : ''}`,
+      message: `${plural(files.length + (includeProject ? 1 : 0), 'file')} (${fmtBytes(groups.reduce((t, g) => t + g.size, 0))}) go to the Recycle Bin.${used ? ` ${plural(used, 'item')} used in the project will show as missing in ${appName()}.` : ''}`,
       confirm: 'Move to Recycle Bin',
       danger: true,
     });
@@ -389,9 +438,9 @@ export async function organizeDialog() {
     width: 'wide',
     body: [
       folderField('Destination', opts.destDir, (v) => (opts.destDir = v), { title: 'Where should the organized footage go?' }),
-      h('div.fields-2', h('div.field', h('label', 'Sort into'), select(LAYOUTS, opts.layout, (v) => (opts.layout = v))), h('div.field', h('div.label', 'Files'), seg([['copy', 'Copy'], ['move', 'Move']], opts.mode, (v) => { opts.mode = v; moveNote.hidden = v !== 'move'; }))),
+      h('div.fields-2', h('div.field', h('label', 'Sort into'), select(layoutsFor(p.format, { withDate: true }), opts.layout, (v) => (opts.layout = v))), h('div.field', h('div.label', 'Files'), seg([['copy', 'Copy'], ['move', 'Move']], opts.mode, (v) => { opts.mode = v; moveNote.hidden = v !== 'move'; }))),
       checkbox({ checked: true, label: 'Include unused footage', onchange: (v) => (opts.includeUnused = v) }),
-      h('div.notice.info', icon('info'), h('div', 'A new project, ', h('b', `${p.name}_organized.aep`), ', is saved next to the original and points to the organized files. The original project file is not changed.')),
+      h('div.notice.info', icon('info'), h('div', 'A new project, ', h('b', `${p.name}_organized${projectExt(p)}`), ', is saved next to the original and points to the organized files. The original project file is not changed.')),
       moveNote,
     ],
     footer: (close) => [h('div.info'), btn('Cancel', { onclick: () => close(null) }), go],
@@ -434,7 +483,7 @@ export async function archiveDialog() {
     width: 'wide',
     body: [
       folderField('Archive location', opts.destDir, (v) => { opts.destDir = v; go.disabled = !v; }, { title: 'Choose the archive location', placeholder: 'e.g. an external drive…' }),
-      h('div.fields-2', h('div.field', h('label', 'Organize files'), select(LAYOUTS.filter(([k]) => k !== 'date'), opts.layout, (v) => (opts.layout = v))), h('div.field', h('div.label', 'Include'), checkbox({ checked: true, label: 'Unused footage too', onchange: (v) => (opts.includeUnused = v) }))),
+      h('div.fields-2', h('div.field', h('label', 'Organize files'), select(layoutsFor(p.format), opts.layout, (v) => (opts.layout = v))), h('div.field', h('div.label', 'Include'), checkbox({ checked: true, label: 'Unused files too', onchange: (v) => (opts.includeUnused = v) }))),
       checkbox({
         checked: false,
         cls: 'danger',
@@ -558,7 +607,7 @@ export async function missingDialog() {
     tone: 'warn',
     width: 'xwide',
     body: [h('div.field', h('div.label', 'Search in'), rootsEl), h('div.row', btn('Search now', { icon: 'search', cls: 'primary', onclick: search }), h('span.dim', status)), listEl],
-    footer: (close) => [h('div.info', 'After relinking, save a relinked copy of the project for After Effects.'), btn('Close', { onclick: () => close(null) }), relinkBtn],
+    footer: (close) => [h('div.info', `After relinking, save a relinked copy of the project for ${appName()}.`), btn('Close', { onclick: () => close(null) }), relinkBtn],
   });
   relinkBtn.addEventListener('click', () => m.close('go'));
   if ((await m.result) !== 'go') return;
@@ -588,7 +637,7 @@ export async function batchPackageDialog(ids) {
       h('div.field', h('div.label', 'Format'), seg([['zip', 'Zip files', 'zip'], ['folder', 'Folders', 'folder']], opts.format, (v) => (opts.format = v))),
       folderField('Save to', opts.destDir, (v) => { opts.destDir = v; go.disabled = !v; }),
       h('div.fields-2', h('div.field', h('label', 'Organize files'), select(LAYOUTS.filter(([k]) => k !== 'date'), opts.layout, (v) => (opts.layout = v))), h('div.field', h('div.label', 'Include'), checkbox({ checked: opts.includeUnused, label: 'Unused footage too', onchange: (v) => (opts.includeUnused = v) }))),
-      privacyOptions(opts, { withOriginal: false }),
+      privacyOptions(opts, { withOriginal: false, format: 'mixed' }),
       h('div.dim', `About ${fmtBytes(total)} in total.`),
     ],
     footer: (close) => [h('div.info'), btn('Cancel', { onclick: () => close(null) }), go],
@@ -614,8 +663,70 @@ export async function batchPackageDialog(ids) {
 
 // ---------------------------------------------------------------- help
 
+// ---------------------------------------------------------------- leftovers
+
+/** Where Cargo looks for leftover files and for the projects that might still use them. */
+export async function leftoversDialog() {
+  const p = state.project;
+  let setup;
+  try {
+    setup = await api.leftoverSetup(p.id);
+  } catch (err) {
+    return errorDialog(err.message);
+  }
+  const folders = [...setup.folders];
+  const roots = [...setup.projectRoots];
+  const savedFolders = new Set(setup.savedFolders);
+  const savedRoots = new Set(setup.savedRoots);
+  const fl = p.format === 'flp';
+
+  const listEl = (items, saved, title) => {
+    const el = h('div.col', { style: { gap: '4px' } });
+    const paint = () =>
+      replace(
+        el,
+        ...items.map((f, i) => h('div.row', icon('folder', 'sm'), h('span.ellipsis.mono.grow', { title: f }, f), iconBtn('x', { title: 'Don’t look here', cls: 'ghost sm', onclick: () => { items.splice(i, 1); saved.delete(f); paint(); } }))),
+        h('div', btn('Add a folder…', { cls: 'sm ghost', icon: 'plus', onclick: async () => { const d = await api.openFolder({ title }); if (d && !items.includes(d)) { items.push(d); saved.add(d); paint(); } } })),
+      );
+    paint();
+    return el;
+  };
+
+  const info = p.leftoverInfo;
+  const go = btn('Search now', { cls: 'primary', icon: 'search' });
+  const m = modal({
+    title: 'Leftover files',
+    subtitle: fl
+      ? 'Recordings, renders and samples in these folders that this project doesn’t use, unless one of your other FL Studio projects does.'
+      : 'Media in these folders that this project doesn’t use, unless another After Effects project in them does.',
+    icon: 'mic',
+    width: 'wide',
+    body: [
+      info
+        ? h('div.dim', `Last search: ${plural(info.count, 'leftover')} (${fmtBytes(info.size)}), ${plural(info.projectsChecked, 'other project')} checked${info.keptForOthers ? `, ${plural(info.keptForOthers, 'file')} kept because another project uses ${info.keptForOthers === 1 ? 'it' : 'them'}` : ''}.`)
+        : null,
+      h('div.field', h('div.label', 'Look for leftovers in'), listEl(folders, savedFolders, 'Look for leftover files in this folder')),
+      h('div.field', h('div.label', fl ? 'Your other FL Studio projects are in' : 'Other projects are in'), listEl(roots, savedRoots, 'Look for projects in this folder')),
+      h('div.notice.info', icon('info'), h('div', 'A file only counts as a leftover when none of the projects in these folders uses it. Add the folders where you keep your projects, so files another song still needs are never offered for deletion.')),
+      fl ? checkbox({ checked: setup.auto, label: 'Look for leftovers whenever an FL Studio project opens', onchange: (v) => saveSettings({ findLeftovers: v }) }) : null,
+    ],
+    footer: (close) => [h('div.info'), btn('Close', { onclick: () => close(null) }), go],
+  });
+  go.addEventListener('click', () => m.close('go'));
+  if ((await m.result) !== 'go') return;
+  await saveSettings({ leftoverFolders: [...savedFolders], projectRoots: [...savedRoots] });
+  try {
+    const project = await runJob('Looking for leftover files', (jobId) => api.findLeftovers(p.id, { folders, projectRoots: roots }, jobId), { icon: 'search' });
+    applyProjectUpdate(project);
+    const n = project.totals.leftoverCount;
+    toast(n ? `Found ${plural(n, 'leftover file')} (${fmtBytes(project.totals.leftoverSize)}).` : 'No leftover files found.', { tone: n ? '' : 'ok', timeout: 5000 });
+  } catch (err) {
+    if (!err.cancelled) errorDialog(err.message);
+  }
+}
+
 export function helpDialog() {
-  const legend = ['used', 'missing', 'unused', 'unused-missing', 'generated'].map((s) => h('div.row', h(`span.dot.${s}`), h('span', { style: { color: 'var(--text-2)', minWidth: '110px' } }, STATUS_LABEL[s]), h('span.dim', legendText[s])));
+  const legend = ['used', 'missing', 'unused', 'unused-missing', 'leftover', 'generated'].map((s) => h('div.row', h(`span.dot.${s}`), h('span', { style: { color: 'var(--text-2)', minWidth: '110px' } }, STATUS_LABEL[s]), h('span.dim', legendText[s])));
   const keys = [
     ['Ctrl+O', 'Open a project'],
     ['Ctrl+F', 'Search assets'],
@@ -655,7 +766,7 @@ export function helpDialog() {
   });
   const m = modal({
     title: 'Cargo',
-    subtitle: `After Effects project scanner & packager · version ${state.info.version}`,
+    subtitle: `Project scanner & packager for After Effects and FL Studio · version ${state.info.version}`,
     icon: 'help',
     width: 'wide',
     body: [
@@ -664,8 +775,8 @@ export function helpDialog() {
         h('div', h('h4', 'Keyboard'), h('div.kbd-list', ...keys.flatMap(([k, v]) => [h('kbd', k), h('span', v)]))),
       ),
       h('div.help-grid',
-        h('div', h('h4', 'How “used” is decided'), h('ul', h('li', 'An item is used when a layer in any composition uses it.'), h('li', 'Data files referenced by expressions (footage("…")) count as used.'), h('li', 'Solids and placeholders have no file on disk.'))),
-        h('div', h('h4', 'Good to know'), h('ul', h('li', 'Cargo never changes your .aep. Packages, archives and relinks write new copies.'), h('li', 'Deleted files go to the Recycle Bin.'), h('li', 'Fonts and plugins are listed but not packaged.'))),
+        h('div', h('h4', 'How “used” is decided'), h('ul', h('li', 'After Effects: an item is used when a layer in any composition uses it, or an expression reads it.'), h('li', 'FL Studio: a sample is used when it’s on the playlist, or its channel plays notes in a pattern that is.'), h('li', 'Not in project: files in the project or recording folders that no project Cargo found uses.'))),
+        h('div', h('h4', 'Good to know'), h('ul', h('li', 'Cargo never changes your project files. Packages, archives and relinks write new copies.'), h('li', 'Deleted files go to the Recycle Bin.'), h('li', 'Fonts and plugins are listed but not packaged.'))),
       ),
       h(
         'div',
@@ -727,7 +838,8 @@ export async function updateDialog(update = state.update) {
 const legendText = {
   used: 'In use and found on disk',
   missing: 'In use, but the file is missing',
-  unused: 'Not used in any composition',
+  unused: 'In the project, but not used',
+  leftover: 'On disk, but no project uses it',
   'unused-missing': 'Not used and missing',
   generated: 'Solid, placeholder or unreadable — no file',
 };

@@ -8,6 +8,9 @@ const path = require('path');
 const crypto = require('crypto');
 const { parseAep } = require('./aep');
 const { parseAepx } = require('./aepx');
+const { parseFlp } = require('./flp');
+const flenv = require('./flenv');
+const { appFor, PROJECT_EXT } = require('./apps');
 const media = require('./media');
 const { matchSequence, parseFrameName } = require('./sequence');
 const { pathKey, baseName, statSafe, pool, DirCache } = require('./fsutil');
@@ -16,6 +19,7 @@ const MAX_FOLDER_FILES = 20000;
 
 function parseProjectBuffer(filePath, buf) {
   const ext = media.extOf(filePath);
+  if (ext === 'flp' || buf.toString('latin1', 0, 4) === 'FLhd') return parseFlp(buf);
   if (ext === 'aepx' || buf.toString('utf8', 0, 64).trimStart().startsWith('<?xml')) {
     return parseAepx(buf);
   }
@@ -47,9 +51,10 @@ async function listFolderRecursive(dir, limit) {
  * @param {object} [opts]
  * @param {Record<string,string>} [opts.relinks] stored path -> replacement path
  * @param {(p: {phase: string, done?: number, total?: number}) => void} [opts.onProgress]
+ * @param {object} [opts.env] FL Studio folders (flenv.environment())
  */
 async function scanProject(filePath, opts = {}) {
-  const { relinks = {}, onProgress = () => {} } = opts;
+  const { relinks = {}, onProgress = () => {}, env = flenv.environment() } = opts;
   const started = Date.now();
   onProgress({ phase: 'Reading project' });
   const fileStat = await fsp.stat(filePath);
@@ -79,14 +84,20 @@ async function scanProject(filePath, opts = {}) {
     }
   }
   const exprNames = new Set(parsed.expressionRefs.map((n) => n.toLowerCase()));
+  const isFl = parsed.format === 'flp';
+  const dir = path.dirname(filePath);
+  const dataPath = isFl && parsed.dataPath ? flenv.expandPath(parsed.dataPath, env) : null;
 
   const assets = parsed.footage.map((f) => {
     const ext = f.path ? media.extOf(f.path) : '';
-    const category = f.kind === 'file' ? media.categoryOf(ext) : f.kind === 'solid' ? 'solid' : f.kind === 'placeholder' ? 'placeholder' : 'other';
+    const relinkedTo = f.path && relinks[f.path] ? relinks[f.path] : null;
+    const resolved = relinkedTo || (isFl ? flenv.expandPath(f.path, env) : f.path);
+    let category = f.kind === 'file' ? media.categoryOf(ext) : f.kind === 'solid' ? 'solid' : f.kind === 'placeholder' ? 'placeholder' : 'other';
+    if (isFl && f.kind === 'file') category = flenv.classify(f.path, resolved, env, dataPath);
     const usedIn = [...(usedBy.get(f.id) || [])];
     const fileName = f.path ? path.basename(f.path.replace(/\\/g, '/')) : '';
     const usedByExpression = f.kind === 'file' && (exprNames.has(f.name.toLowerCase()) || exprNames.has(fileName.toLowerCase()));
-    const relinked = f.path && relinks[f.path] ? relinks[f.path] : null;
+    const used = parsed.usedIds ? parsed.usedIds.has(f.id) : usedIn.length > 0 || usedByExpression;
     return {
       id: f.id,
       name: f.name,
@@ -94,11 +105,14 @@ async function scanProject(filePath, opts = {}) {
       category,
       ext,
       parentId: f.parentId,
-      folderPath: folderPath(f.parentId),
+      folderPath: f.group || folderPath(f.parentId),
+      origin: f.origin || null,
       path: f.path,
       extraPaths: f.extraPaths,
-      resolvedPath: relinked || f.path,
-      relinked: !!relinked,
+      resolvedPath: resolved,
+      relinked: !!relinkedTo,
+      foundNearby: false,
+      leftover: false,
       targetIsFolder: f.targetIsFolder,
       fileType: f.fileType,
       width: f.width,
@@ -108,7 +122,7 @@ async function scanProject(filePath, opts = {}) {
       solidColor: f.solidColor,
       usedIn,
       usedByExpression,
-      used: usedIn.length > 0 || usedByExpression,
+      used,
       exists: false,
       size: 0,
       mtime: null,
@@ -129,6 +143,19 @@ async function scanProject(filePath, opts = {}) {
   onProgress({ phase: 'Checking files', done, total: fileAssets.length });
   await pool(fileAssets, 16, async (a) => {
     await resolveAsset(a, dirs);
+    // FL Studio looks for missing samples next to the project (and in its
+    // data folder) before giving up, so Cargo does too.
+    if (isFl && !a.exists && !a.relinked) {
+      const name = path.basename(String(a.resolvedPath).split("\\").join('/'));
+      for (const near of [path.join(dir, name), dataPath && path.join(dataPath, name)].filter(Boolean)) {
+        if (await statSafe(near)) {
+          a.resolvedPath = near;
+          a.foundNearby = true;
+          await resolveAsset(a, dirs);
+          break;
+        }
+      }
+    }
     done++;
     if (done % 25 === 0 || done === fileAssets.length) {
       onProgress({ phase: 'Checking files', done, total: fileAssets.length });
@@ -139,17 +166,23 @@ async function scanProject(filePath, opts = {}) {
     if (a.kind === 'solid') a.status = 'generated';
     else if (a.kind === 'placeholder') a.status = 'placeholder';
     else if (a.kind !== 'file') a.status = 'unknown';
+    else if (a.leftover) a.status = 'leftover';
     else if (a.exists) a.status = a.used ? 'used' : 'unused';
     else a.status = a.used ? 'missing' : 'unused-missing';
   }
 
   const comps = buildComps(parsed.comps, usedBy, folderPath);
+  const app = appFor(parsed.format);
   const session = {
     id: crypto.randomUUID(),
     filePath,
-    name: path.basename(filePath).replace(/\.aepx?$/i, ''),
-    dir: path.dirname(filePath),
+    name: path.basename(filePath).replace(PROJECT_EXT, ''),
+    dir,
     format: parsed.format,
+    app: app.app,
+    labels: app.labels,
+    dataPath,
+    leftoverInfo: null,
     fileSize: fileStat.size,
     mtime: fileStat.mtimeMs,
     creatorTool: parsed.creatorTool,
@@ -181,6 +214,7 @@ async function resolveAsset(a, dirs) {
     return;
   }
   a.size = st.size;
+  if ((a.ext === 'wav' || a.ext === 'wave') && !a.duration) a.duration = await wavDuration(a.resolvedPath);
 
   // Numbered stills with a duration are image sequences. When the source
   // spec was unreadable, fall back to looking for enough numbered siblings.
@@ -204,6 +238,36 @@ async function resolveAsset(a, dirs) {
   for (const s of stats) if (s && s.mtimeMs > a.mtime) a.mtime = s.mtimeMs;
 }
 
+/** Length of a WAV file from its header, or null. */
+async function wavDuration(file) {
+  let fh;
+  try {
+    fh = await fsp.open(file, 'r');
+    const head = Buffer.alloc(64 * 1024);
+    const { bytesRead } = await fh.read(head, 0, head.length, 0);
+    const b = head.subarray(0, bytesRead);
+    if (b.length < 12 || b.toString('latin1', 0, 4) !== 'RIFF' || b.toString('latin1', 8, 12) !== 'WAVE') return null;
+    let byteRate = 0;
+    let off = 12;
+    while (off + 8 <= b.length) {
+      const id = b.toString('latin1', off, off + 4);
+      const size = b.readUInt32LE(off + 4);
+      if (id === 'fmt ' && off + 20 <= b.length) byteRate = b.readUInt32LE(off + 16);
+      if (id === 'data') {
+        const st = await fh.stat();
+        const dataSize = Math.min(size, st.size - off - 8);
+        return byteRate ? Math.round((dataSize / byteRate) * 1000) / 1000 : null;
+      }
+      off += 8 + size + (size & 1);
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fh) await fh.close().catch(() => {});
+  }
+}
+
 function buildComps(rawComps, usedBy, folderPath) {
   return rawComps.map((c) => {
     const counts = new Map();
@@ -213,6 +277,7 @@ function buildComps(rawComps, usedBy, folderPath) {
     return {
       id: c.id,
       name: c.name,
+      kind: c.kind || 'comp',
       parentId: c.parentId,
       folderPath: folderPath(c.parentId),
       width: c.width,
@@ -220,7 +285,7 @@ function buildComps(rawComps, usedBy, folderPath) {
       fps: c.fps,
       duration: c.duration,
       layerCount: c.layers.length,
-      layers: c.layers.map((l) => ({ index: l.index, name: l.name, sourceId: l.sourceId, effects: l.effects })),
+      layers: c.layers.map((l) => ({ index: l.index, name: l.name, sourceId: l.sourceId, effects: l.effects, count: l.notes || l.clips || null })),
       sources: [...counts].map(([id, count]) => ({ id, count })),
       usedIn: [...(usedBy.get(c.id) || [])],
       effectCount: c.effects.length,
@@ -263,7 +328,8 @@ function computeTotals(session) {
     if (a.used) c.used++;
     byStatus[a.status] = (byStatus[a.status] || 0) + 1;
   }
-  const files = session.assets.filter((a) => a.kind === 'file');
+  const files = session.assets.filter((a) => a.kind === 'file' && !a.leftover);
+  const leftovers = session.assets.filter((a) => a.leftover);
   return {
     assetCount: session.assets.length,
     fileAssetCount: files.length,
@@ -280,6 +346,8 @@ function computeTotals(session) {
     unusedMissingCount: byStatus['unused-missing'] || 0,
     solidCount: byStatus.generated || 0,
     placeholderCount: byStatus.placeholder || 0,
+    leftoverCount: leftovers.length,
+    leftoverSize: leftovers.reduce((t, a) => t + a.size, 0),
     byCategory,
     byStatus,
     thirdPartyEffects: session.effects.filter((e) => !e.builtIn).length,
@@ -294,6 +362,10 @@ function toClient(session) {
     name: session.name,
     dir: session.dir,
     format: session.format,
+    app: session.app,
+    labels: session.labels,
+    dataPath: session.dataPath,
+    leftoverInfo: session.leftoverInfo,
     fileSize: session.fileSize,
     mtime: session.mtime,
     creatorTool: session.creatorTool,
@@ -308,4 +380,63 @@ function toClient(session) {
   };
 }
 
-module.exports = { scanProject, parseProjectBuffer, computeTotals, assetFiles, toClient };
+/**
+ * Replaces the leftover files of a session with a new search result
+ * (from leftovers.findLeftovers) and updates the totals.
+ */
+function applyLeftovers(session, result, env = flenv.environment()) {
+  session.assets = session.assets.filter((a) => !a.leftover);
+  result.leftovers.forEach((l, i) => {
+    const ext = media.extOf(l.path);
+    session.assets.push({
+      id: 300000 + i,
+      name: path.basename(l.path),
+      kind: 'file',
+      category: session.format === 'flp' ? flenv.classify(l.path, l.path, env, session.dataPath) : media.categoryOf(ext),
+      ext,
+      parentId: 0,
+      folderPath: l.folder,
+      origin: 'leftover',
+      path: l.path,
+      extraPaths: [],
+      resolvedPath: l.path,
+      relinked: false,
+      foundNearby: false,
+      leftover: true,
+      targetIsFolder: false,
+      fileType: null,
+      width: null,
+      height: null,
+      duration: l.duration || null,
+      fps: null,
+      solidColor: null,
+      usedIn: [],
+      usedByExpression: false,
+      used: false,
+      exists: true,
+      size: l.size,
+      mtime: l.mtime,
+      isSequence: false,
+      isFolder: false,
+      frames: null,
+      frameCount: 0,
+      sequencePattern: null,
+      sequenceGaps: 0,
+      status: 'leftover',
+    });
+  });
+  // Files the other projects use, so cleanup never offers them.
+  Object.defineProperty(session, 'externalRefs', { value: result.others || new Map(), enumerable: false, configurable: true, writable: true });
+  session.leftoverInfo = {
+    count: result.leftovers.length,
+    size: result.leftovers.reduce((t, l) => t + l.size, 0),
+    folders: result.folders,
+    projectsChecked: result.projectsChecked,
+    keptForOthers: result.keptForOthers,
+    complete: result.complete,
+    at: Date.now(),
+  };
+  session.totals = computeTotals(session);
+}
+
+module.exports = { scanProject, parseProjectBuffer, computeTotals, assetFiles, toClient, applyLeftovers, wavDuration };

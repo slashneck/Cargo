@@ -28,6 +28,10 @@ function planDeleteUnused(session, { protectedKeys = new Set(), protectedReasons
   const claimed = new Set();
   for (const a of session.assets) {
     if (a.kind !== 'file' || a.used || !a.exists) continue;
+    if (a.category === 'stock') {
+      skipped.push({ id: a.id, name: a.name, reason: 'Comes with FL Studio' });
+      continue;
+    }
     const files = [];
     let size = 0;
     let reason = null;
@@ -47,7 +51,7 @@ function planDeleteUnused(session, { protectedKeys = new Set(), protectedReasons
       size += f.size;
     }
     if (files.length) {
-      groups.push({ id: a.id, name: a.name, category: a.category, files, size, folder: path.dirname(files[0]) });
+      groups.push({ id: a.id, name: a.name, category: a.category, files, size, folder: path.dirname(files[0]), leftover: !!a.leftover });
     } else if (reason) {
       skipped.push({ id: a.id, name: a.name, reason });
     }

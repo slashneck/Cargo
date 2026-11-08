@@ -2,7 +2,7 @@
 
 import { h, btn, iconBtn, plural } from '../util.js';
 import { icon, logo } from '../icons.js';
-import { state, emit } from '../state.js';
+import { state, emit, labels } from '../state.js';
 import { chooseAndOpen, goHome, recentMenu, rescan, reveal, openInAE } from '../actions.js';
 import { helpDialog, updateDialog } from '../dialogs.js';
 
@@ -20,7 +20,7 @@ export function renderTitlebar() {
         p.format === 'aepx' ? h('span.badge.accent', 'XML') : null,
         iconBtn('refresh', { title: 'Rescan (Ctrl+R)', cls: 'ghost sm', onclick: () => rescan() }),
         iconBtn('reveal', { title: 'Show project in folder', cls: 'ghost sm', onclick: () => reveal(p.filePath) }),
-        btn('Open in AE', { cls: 'ghost sm', icon: 'external', title: 'Open this project in After Effects', onclick: () => openInAE() }),
+        btn(labels().open, { cls: 'ghost sm', icon: 'external', title: labels().openLong, onclick: () => openInAE() }),
       ),
     );
   } else if (state.mode === 'batch') {

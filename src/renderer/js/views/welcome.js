@@ -21,8 +21,8 @@ export function renderWelcome() {
         'div.dropzone',
         { onclick: (e) => { if (!e.target.closest('button')) chooseAndOpen(); } },
         h('div.mark', logo()),
-        h('h1', 'Drop an After Effects project'),
-        h('p', 'Cargo reads .aep and .aepx files without After Effects, shows every file they use, and packages, archives or cleans them up.'),
+        h('h1', 'Drop a project'),
+        h('p', 'Cargo reads After Effects (.aep, .aepx) and FL Studio (.flp) projects without opening them, shows every file they use, and packages, archives or cleans them up.'),
         h('div.actions', btn('Open Project', { cls: 'primary lg', icon: 'open', onclick: chooseAndOpen, kbd: 'Ctrl+O' }), btn('Scan a Folder…', { cls: 'lg', icon: 'batch', onclick: () => scanFolder() })),
       ),
       h(
@@ -43,13 +43,18 @@ export function renderWelcome() {
   );
 }
 
+function appBadge(file) {
+  const ext = (/\.([a-z]+)$/i.exec(file || '') || ['', ''])[1].toLowerCase();
+  return h(`span.app-badge.${ext}`, ext === 'flp' ? 'FL' : 'AE');
+}
+
 function recentCard(r) {
   const t = r.totals || {};
   const total = t.totalSize || 0;
   return h(
     'button.recent-card',
     { type: 'button', onclick: () => openProject(r.path), title: r.path },
-    h('div.name.ellipsis', r.name),
+    h('div.name.ellipsis', appBadge(r.path), ' ', r.name),
     h('div.path.ellipsis', r.path),
     h('div.mini-bar', h('span.u', { style: { width: `${pct(t.usedSize, total)}%` } }), h('span.x', { style: { width: `${pct(t.unusedSize, total)}%` } })),
     h(

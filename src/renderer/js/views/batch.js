@@ -188,7 +188,7 @@ export function renderBatch() {
       'tr',
       { style: { cursor: 'pointer' }, ondblclick: () => showProject(p.id) },
       h('td', checkbox({ checked: selected.has(p.id), onchange: (on) => { if (on) selected.add(p.id); else selected.delete(p.id); emit('content'); } })),
-      h('td', { onclick: () => showProject(p.id) }, h('div.strong', p.name), h('div.mono.dimmer.ellipsis', { style: { maxWidth: '380px' }, title: p.filePath }, dirname(p.filePath))),
+      h('td', { onclick: () => showProject(p.id) }, h('div.strong.row', { style: { gap: '7px' } }, h(`span.app-badge.${p.format}`, p.format === 'flp' ? 'FL' : 'AE'), p.name), h('div.mono.dimmer.ellipsis', { style: { maxWidth: '380px' }, title: p.filePath }, dirname(p.filePath))),
       h('td.dim', { style: { whiteSpace: 'nowrap' }, title: p.mtime ? fmtDate(p.mtime) : '' }, p.mtime ? fmtDate(p.mtime, false) : ''),
       h('td.r.num', String(t.fileAssetCount)),
       h('td.r.num', t.missingCount + t.unusedMissingCount ? h('span', { style: { color: 'var(--warn)' } }, String(t.missingCount + t.unusedMissingCount)) : '0'),

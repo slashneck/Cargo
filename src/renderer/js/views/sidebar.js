@@ -2,9 +2,9 @@
 
 import { h, fmtBytes, pct, plural, CATEGORY_PLURAL } from '../util.js';
 import { icon, CATEGORY_ICONS } from '../icons.js';
-import { state, emit, invalidate, tagsFor, isFavorite, folderDescendants } from '../state.js';
+import { state, emit, invalidate, tagsFor, isFavorite, folderDescendants, labels } from '../state.js';
 
-const CATEGORY_ORDER = ['video', 'audio', 'image', 'sequence', 'graphics', 'data', '3d', 'project', 'other', 'placeholder', 'solid'];
+const CATEGORY_ORDER = ['recording', 'render', 'sample', 'stock', 'video', 'audio', 'image', 'sequence', 'graphics', 'data', '3d', 'project', 'other', 'placeholder', 'solid'];
 
 function setFilter(patch) {
   state.filter = { ...state.filter, ...patch };
@@ -46,14 +46,17 @@ export function renderSidebar() {
   const status = h(
     'div.side-group',
     h('div.side-title', 'Status'),
-    item({ label: 'Used', dot: 'used', count: files.filter((a) => a.used).length, on: f.status === 'used', onclick: () => setFilter({ status: f.status === 'used' ? null : 'used' }), title: 'Used in at least one composition' }),
-    item({ label: 'Unused', dot: 'unused', count: files.filter((a) => !a.used).length, on: f.status === 'unused', onclick: () => setFilter({ status: f.status === 'unused' ? null : 'unused' }), title: 'Not used in any composition' }),
+    item({ label: 'Used', dot: 'used', count: files.filter((a) => a.used).length, on: f.status === 'used', onclick: () => setFilter({ status: f.status === 'used' ? null : 'used' }), title: 'Used by the project' }),
+    item({ label: 'Unused', dot: 'unused', count: files.filter((a) => !a.used).length, on: f.status === 'unused', onclick: () => setFilter({ status: f.status === 'unused' ? null : 'unused' }), title: 'In the project, but not used' }),
     item({ label: 'Missing', dot: 'missing', count: missingCount, on: f.status === 'missing', onclick: () => setFilter({ status: f.status === 'missing' ? null : 'missing' }), title: 'File not found on disk' }),
+    p.totals.leftoverCount || p.format === 'flp'
+      ? item({ label: 'Not in project', dot: 'leftover', count: p.totals.leftoverCount || 0, on: f.status === 'leftover', onclick: () => setFilter({ status: f.status === 'leftover' ? null : 'leftover' }), title: 'On disk, but no project Cargo checked uses them' })
+      : null,
     item({ label: 'Favorites', ic: 'star', count: favCount, on: f.status === 'favorites', onclick: () => setFilter({ status: f.status === 'favorites' ? null : 'favorites' }) }),
     ...[...tagCounts].sort((a, b) => b[1] - a[1]).map(([tg, n]) => item({ label: tg, ic: 'tag', count: n, on: f.status === `tag:${tg}`, onclick: () => setFilter({ status: f.status === `tag:${tg}` ? null : `tag:${tg}` }) })),
   );
 
-  const tree = h('div.side-group', h('div.side-title', h('span', 'Project'), h('span', { style: { textTransform: 'none', letterSpacing: 0, fontWeight: 400 } }, plural(p.comps.length, 'comp'))), h('div.tree', ...treeNodes(p, 0, 0)));
+  const tree = h('div.side-group', h('div.side-title', h('span', p.format === 'flp' ? labels().compsLong : 'Project'), h('span', { style: { textTransform: 'none', letterSpacing: 0, fontWeight: 400 } }, plural(p.comps.filter((c) => c.kind !== 'arrangement').length, labels().comp.toLowerCase()))), h('div.tree', ...treeNodes(p, 0, 0)));
 
   const usedPct = pct(t.usedSize, t.totalSize);
   const stats = h(
@@ -114,12 +117,12 @@ function treeNodes(p, parentId, depth) {
         `div.tree-row.comp${f.compId === comp.id ? '.on' : ''}`,
         {
           style: { paddingLeft: `${depth * 14 + 18}px` },
-          title: `${comp.name}\nClick to show the footage this composition uses`,
+          title: `${comp.name}\nClick to show the files it uses`,
           onclick: () => setFilter({ compId: f.compId === comp.id ? null : comp.id, folderId: null }),
         },
-        icon('comp'),
+        icon(comp.kind === 'arrangement' ? 'list' : 'comp'),
         h('span.label', comp.name),
-        comp.usedIn.length === 0 ? h('span.count', { title: 'Top-level composition' }, '●') : null,
+        comp.usedIn.length === 0 ? h('span.count', { title: comp.kind === 'arrangement' ? 'Playlist' : comp.kind === 'pattern' ? 'Not on the playlist' : 'Top-level composition' }, '●') : null,
       ),
     );
   }

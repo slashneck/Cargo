@@ -84,7 +84,7 @@ internal sealed class SetupForm : Form
     {
         _page.Controls.Clear();
         _title.Text = "Cargo";
-        _subtitle.Text = "Scans After Effects projects without After Effects, finds what's unused or missing, and packages everything they need.";
+        _subtitle.Text = "Reads After Effects and FL Studio projects, finds what's unused, missing or left over, and packages everything they need.";
 
         bool installed = Installer.IsInstalled(_options.Folder);
         var desktop = new CheckOption { Text = "Add a desktop shortcut", Checked = _options.DesktopShortcut, Bounds = new Rectangle(0, 0, S(360), S(28)) };
@@ -147,7 +147,7 @@ internal sealed class SetupForm : Form
     {
         _page.Controls.Clear();
         _title.Text = "All set";
-        _subtitle.Text = "Open Cargo from the Start menu, then drop an .aep onto its window to see every file the project uses.";
+        _subtitle.Text = "Open Cargo from the Start menu, then drop an .aep or .flp onto its window to see every file the project uses.";
 
         var open = new FlatButton { Primary = true, Text = "Open Cargo", Bounds = new Rectangle(S(220), S(178), S(140), S(40)) };
         var close = new FlatButton { Text = "Close", Bounds = new Rectangle(S(110), S(178), S(100), S(40)) };

@@ -2,7 +2,7 @@
 
 import { h, btn, iconBtn, fmtBytes, plural, STATUS_LABEL } from '../util.js';
 import { icon } from '../icons.js';
-import { state, emit } from '../state.js';
+import { state, emit, appName } from '../state.js';
 import { runJob, errorDialog, confirmDialog, toast } from '../ui.js';
 import { reveal, focusAsset, applyProjectUpdate, refreshStore } from '../actions.js';
 
@@ -23,7 +23,7 @@ async function trashCopies(group) {
   const size = removable.reduce((t, m) => t + m.size, 0);
   const ok = await confirmDialog({
     title: `Move ${plural(removable.length, 'copy', 'copies')} to the Recycle Bin?`,
-    message: `${removable.map((m) => m.name).join(', ')} (${fmtBytes(size)}). They aren’t used by any composition. You can restore them from the Recycle Bin.`,
+    message: `${removable.map((m) => m.name).join(', ')} (${fmtBytes(size)}). The project doesn’t use them. You can restore them from the Recycle Bin.`,
     confirm: 'Move to Recycle Bin',
     danger: true,
   });
@@ -90,7 +90,7 @@ export function renderDuplicates() {
     h(
       'div.pane-inner',
       h('div.row', h('div.grow', h('div', { style: { color: 'var(--text)', fontSize: '14px', fontWeight: 600 } }, `${plural(d.identical.length, 'identical group')} · ${fmtBytes(wasted)} in extra copies`), h('div.dim', `${plural(d.similar.length, 'group')} of similar files`)), btn('Search again', { icon: 'refresh', cls: 'sm', onclick: find })),
-      h('div.notice.info', icon('info'), h('div', 'The ', h('b', 'keep'), ' suggestion prefers files the project uses, then files inside the project folder, then the largest. Only unused copies can be recycled here; relink used copies in After Effects first.')),
+      h('div.notice.info', icon('info'), h('div', 'The ', h('b', 'keep'), ` suggestion prefers files the project uses, then files inside the project folder, then the largest. Only unused copies can be recycled here; relink used copies in ${appName()} first.`)),
       d.identical.length ? h('div.section-title', 'Identical copies') : null,
       ...d.identical.map(group),
       d.similar.length ? h('div.section-title', { style: { marginTop: '8px' } }, 'Similar files') : null,

@@ -11,7 +11,10 @@ const fsp = fs.promises;
 const path = require('path');
 const os = require('os');
 
-const { scanProject, toClient, assetFiles } = require('../core/analyze');
+const { scanProject, toClient, assetFiles, applyLeftovers } = require('../core/analyze');
+const { findLeftovers } = require('../core/leftovers');
+const flenv = require('../core/flenv');
+const { PROJECT_EXT } = require('../core/apps');
 const collect = require('../core/collect');
 const report = require('../core/report');
 const { relinkScript } = require('../core/relinkScript');
@@ -27,7 +30,8 @@ const BLOCKED_OPEN = new Set(['exe', 'bat', 'cmd', 'com', 'msi', 'ps1', 'vbs', '
 
 // Auto-save folders and files as After Effects names them in its languages,
 // e.g. "Adobe After Effects Auto-Save" and "Spot auto-save 3.aep".
-const AUTO_SAVE = /auto[-\s_]?save|automatisch|autom[aá]tico|salvataggio automatico|enregistrement auto|sauvegarde auto|автосохран|自動保存|자동 저장|自动保存/i;
+// FL Studio keeps backups in a "Backup" folder, named "Song (overwritten at 1503).flp".
+const AUTO_SAVE = /^backup$|\(overwritten at|auto[-\s_]?save|automatisch|autom[aá]tico|salvataggio automatico|enregistrement auto|sauvegarde auto|автосохран|自動保存|자동 저장|自动保存/i;
 
 class UserError extends Error {}
 
@@ -102,9 +106,34 @@ function register({ store }) {
     return dto;
   };
 
-  const scan = async (filePath, progress, keepId) => {
+  const flEnv = () => flenv.environment({ documents: app.getPath('documents'), userDir: store.data.settings.flUserDir || undefined });
+
+  // Where to look for leftover files and for other projects that might use them.
+  const leftoverOptions = (s) => {
+    const env = flEnv();
+    const settings = store.data.settings;
+    const folders = s.format === 'flp' ? flenv.leftoverFolders(env, { projectDir: s.dir, dataPath: s.dataPath }) : [s.dir];
+    const roots = s.format === 'flp' ? flenv.projectFolders(env, { projectDir: s.dir }) : [s.dir, path.dirname(s.dir)];
+    return {
+      env,
+      folders: [...new Set([...folders, ...(settings.leftoverFolders || [])])],
+      projectRoots: [...new Set([...roots, ...(settings.projectRoots || [])])],
+    };
+  };
+
+  const scan = async (filePath, progress, keepId, { leftovers = true } = {}) => {
     try {
-      const s = await scanProject(filePath, { relinks: store.relinksFor(filePath), onProgress: progress });
+      const env = flEnv();
+      const s = await scanProject(filePath, { relinks: store.relinksFor(filePath), onProgress: progress, env });
+      // Deleted takes and old renders are the point of opening an FL project.
+      if (s.format === 'flp' && leftovers && store.data.settings.findLeftovers !== false) {
+        try {
+          const o = leftoverOptions(s);
+          applyLeftovers(s, await findLeftovers(s, { env: o.env, folders: o.folders, projectRoots: o.projectRoots, onProgress: progress }), o.env);
+        } catch (err) {
+          s.warnings.push(`Leftover files couldn’t be checked: ${err.message}`);
+        }
+      }
       if (keepId) {
         s.id = keepId;
         sessions.delete(keepId);
@@ -132,7 +161,8 @@ function register({ store }) {
   };
 
   const protection = (session) => {
-    const reasons = new Map([...store.protectedKeys(), ...otherProjectsUse(session)]);
+    const external = new Map([...(session.externalRefs || new Map())].map(([key, name]) => [key, `Used by “${name}”`]));
+    const reasons = new Map([...external, ...store.protectedKeys(), ...otherProjectsUse(session)]);
     return { protectedKeys: new Set(reasons.keys()), protectedReasons: reasons };
   };
 
@@ -151,7 +181,11 @@ function register({ store }) {
     const r = await dialog.showOpenDialog(win, {
       title: multi ? 'Choose After Effects projects' : 'Open After Effects project',
       properties: multi ? ['openFile', 'multiSelections'] : ['openFile'],
-      filters: [{ name: 'After Effects Projects', extensions: ['aep', 'aepx'] }],
+      filters: [
+        { name: 'Projects', extensions: ['aep', 'aepx', 'flp'] },
+        { name: 'After Effects', extensions: ['aep', 'aepx'] },
+        { name: 'FL Studio', extensions: ['flp'] },
+      ],
     });
     return r.canceled ? [] : r.filePaths;
   });
@@ -236,10 +270,20 @@ function register({ store }) {
   // ---- package / archive / organize -----------------------------------------
 
   const RELINK_HELP = 'run "Relink Footage.jsx" in After Effects (File > Scripts > Run Script File…)';
+  const prefixFor = (session) => (session.format === 'flp' ? '' : 'Footage');
+  // FL projects have no project-panel folders or resolutions to sort by.
+  const layoutFor = (session, layout) => (session.format === 'flp' && (layout === 'project' || layout === 'resolution') ? 'flat' : layout);
 
   const packageNotes = (session, plan, relinked, { zip, privateMode, neutral }) => {
     const notes = [];
-    if (privateMode) {
+    const isFl = session.format === 'flp';
+    if (isFl) {
+      notes.push(
+        privateMode
+          ? `Sample paths in the project point to ${neutral}. FL Studio also looks for samples next to the project file, so open the project from this folder and everything is found.`
+          : 'Sample paths in the project point to the packaged files. FL Studio also looks for samples next to the project file, so the project still finds them after you move the folder.',
+      );
+    } else if (privateMode) {
       notes.push(`Footage paths in the project point to ${neutral}. Extract the package to ${path.dirname(neutral)} and After Effects finds every file, or open the project from anywhere and ${RELINK_HELP}.`);
     } else if (relinked.changed) {
       notes.push(
@@ -250,12 +294,14 @@ function register({ store }) {
     }
     if (relinked.warning) notes.push(relinked.warning);
     const unused = plan.skipped.filter((k) => k.reason === 'unused');
-    if (unused.length) notes.push(`${unused.length} unused item(s) were not included. In After Effects, File > Dependencies > Remove Unused Footage removes them from the project.`);
+    if (unused.length) notes.push(`${unused.length} unused item(s) were not included. ${session.labels.removeUnusedHint}`);
+    const stock = plan.skipped.filter((k) => k.reason === 'stock');
+    if (stock.length) notes.push(`${stock.length} FL Studio stock sample(s) were not included; they come with FL Studio.`);
     const missing = plan.skipped.filter((k) => k.reason === 'missing');
     if (missing.length) notes.push(`${missing.length} file(s) were missing and could not be included.`);
     const thirdParty = session.effects.filter((e) => !e.builtIn && e.count > 0);
-    if (thirdParty.length) notes.push(`Third-party effects are used and must be installed to open this project as intended: ${thirdParty.map((e) => e.displayName).join(', ')}.`);
-    notes.push('Fonts are not included. Install the fonts used in text layers before opening the project.');
+    if (thirdParty.length) notes.push(`Third-party ${isFl ? 'plugins' : 'effects'} are used and must be installed to open this project as intended: ${thirdParty.map((e) => e.displayName).join(', ')}.`);
+    if (!isFl) notes.push('Fonts are not included. Install the fonts used in text layers before opening the project.');
     return notes;
   };
 
@@ -273,8 +319,8 @@ function register({ store }) {
       { rel: projectFileName, data: relinked.buffer },
       { rel: 'MANIFEST.txt', data: Buffer.from(report.toText(data), 'utf8') },
       { rel: 'manifest.json', data: Buffer.from(report.toJson(data), 'utf8') },
-      { rel: 'Relink Footage.jsx', data: Buffer.from(relinkScript(session.name, scriptEntries), 'utf8') },
     ];
+    if (session.format !== 'flp') extras.push({ rel: 'Relink Footage.jsx', data: Buffer.from(relinkScript(session.name, scriptEntries), 'utf8') });
     if (opts.includeOriginal && relinked.changed && !opts.privateMode) extras.push({ rel: `Original Project/${projectFileName}`, data: projectBuf });
     return extras;
   };
@@ -299,7 +345,8 @@ function register({ store }) {
     const relinked = collect.relinkedProject(session, projectBuf, mapping, {
       fallback,
       scrubText: privacy.scrubPaths,
-      xmp: session.format === 'aepx' ? null : privacy.neutralXmp(),
+      xmp: session.format === 'aep' ? privacy.neutralXmp() : null,
+      privateCopy: session.format === 'flp',
     });
     if (relinked.warning) {
       throw new UserError('Cargo could not make a private copy of this project safely, so no package was created. Turn off “Private package” to package it unchanged.');
@@ -307,13 +354,13 @@ function register({ store }) {
     return { neutral, mapping, relinked };
   };
 
-  const leakWarnings = (extras) => {
+  const leakWarnings = (session, extras) => {
     const warnings = [];
     for (const e of extras) {
       const leaks = privacy.findLeaks(e.data);
       if (!leaks.length) continue;
       const n = leaks.reduce((t, l) => t + l.count, 0);
-      warnings.push(`Your user or computer name still appears ${n} time(s) in ${e.rel}, for example in a layer, comp or folder name. Cargo leaves project content as it is; rename it in After Effects if it matters.`);
+      warnings.push(`Your user or computer name still appears ${n} time(s) in ${e.rel}, for example in a layer, comp or folder name. Cargo leaves project content as it is; rename it in ${session.app || 'the project'} if it matters.`);
     }
     return warnings;
   };
@@ -325,7 +372,7 @@ function register({ store }) {
     await ensureUnchanged(session);
     const baseName = safeName(opts.name || `${session.name}_Package_${dateStamp()}`);
     const onlyAssetIds = Array.isArray(opts.assetIds) ? new Set(opts.assetIds) : null;
-    const plan = collect.planCollect(session, { includeUnused, layout, prefix: 'Footage', onlyAssetIds });
+    const plan = collect.planCollect(session, { includeUnused, includeStock: !!opts.includeStock, layout: layoutFor(session, layout), prefix: prefixFor(session), onlyAssetIds });
     let root;
     let zipPath = null;
     if (format === 'zip') {
@@ -348,7 +395,7 @@ function register({ store }) {
     const notes = packageNotes(session, plan, relinked, { zip: format === 'zip', privateMode, neutral });
     const extras = extrasFor(session, plan, mapping, relinked, projectBuf, notes, { includeOriginal, privateMode });
     const warnings = relinked.warning ? [relinked.warning] : [];
-    if (privateMode) warnings.push(...leakWarnings(extras));
+    if (privateMode) warnings.push(...leakWarnings(session, extras));
     let output;
     let failed = [];
     if (format === 'zip') {
@@ -384,13 +431,14 @@ function register({ store }) {
   handle('project:packagePreview', async (_e, id, opts) => {
     const s = getSession(id);
     const onlyAssetIds = Array.isArray(opts.assetIds) ? new Set(opts.assetIds) : null;
-    const plan = collect.planCollect(s, { includeUnused: !!opts.includeUnused, layout: opts.layout || 'type', prefix: 'Footage', onlyAssetIds });
+    const plan = collect.planCollect(s, { includeUnused: !!opts.includeUnused, includeStock: !!opts.includeStock, layout: layoutFor(s, opts.layout || 'type'), prefix: prefixFor(s), onlyAssetIds });
     return {
       files: plan.entries.length,
       bytes: plan.totalBytes,
       missing: plan.skipped.filter((k) => k.reason === 'missing').length,
       unused: plan.skipped.filter((k) => k.reason === 'unused').length,
       unusedBytes: plan.skipped.filter((k) => k.reason === 'unused').reduce((t, k) => t + k.size, 0),
+      stock: plan.skipped.filter((k) => k.reason === 'stock').length,
       sample: plan.entries.slice(0, 400).map((e) => e.rel),
     };
   });
@@ -407,7 +455,7 @@ function register({ store }) {
     await ensureUnchanged(s);
     return runJob(event, jobId, async ({ signal, progress }) => {
       const root = await uniquePath(path.join(destDir, safeName(s.name)));
-      const plan = collect.planCollect(s, { includeUnused, layout, prefix: 'Footage' });
+      const plan = collect.planCollect(s, { includeUnused, includeStock: true, layout: layoutFor(s, layout), prefix: prefixFor(s) });
       await fsp.mkdir(root, { recursive: true });
       let copied;
       try {
@@ -462,7 +510,7 @@ function register({ store }) {
     if (!destDir) throw new UserError('Choose a destination folder.');
     await ensureUnchanged(s);
     return runJob(event, jobId, async ({ signal, progress }) => {
-      const plan = collect.planCollect(s, { includeUnused, layout, prefix: '' });
+      const plan = collect.planCollect(s, { includeUnused, includeStock: true, layout: layoutFor(s, layout), prefix: '' });
       // Skip files that already sit where they would go.
       await fsp.mkdir(destDir, { recursive: true });
       const { done, failed } = await collect.copyToFolder(plan, destDir, { mode, onProgress: progress, signal });
@@ -536,6 +584,7 @@ function register({ store }) {
     const claimed = new Set();
     for (const a of s.assets) {
       if (a.kind !== 'file' || !a.exists || (chosen && !chosen.has(a.id))) continue;
+      if (a.category === 'stock') continue; // comes with FL Studio
       const files = [];
       let size = 0;
       const reasons = new Set();
@@ -593,6 +642,32 @@ function register({ store }) {
         return { ...result, freed, project: null };
       }
       return { ...result, freed, project: client(await scan(s.filePath, progress, id)) };
+    });
+  });
+
+  handle('project:leftoverSetup', async (_e, id) => {
+    const s = getSession(id);
+    const o = leftoverOptions(s);
+    const settings = store.data.settings;
+    return {
+      folders: o.folders,
+      projectRoots: o.projectRoots,
+      savedFolders: settings.leftoverFolders || [],
+      savedRoots: settings.projectRoots || [],
+      userDir: o.env.userDir,
+      info: s.leftoverInfo,
+      auto: settings.findLeftovers !== false,
+    };
+  });
+
+  handle('project:findLeftovers', async (event, id, { folders, projectRoots } = {}, jobId) => {
+    const s = getSession(id);
+    const o = leftoverOptions(s);
+    return runJob(event, jobId, async ({ signal, progress }) => {
+      const result = await findLeftovers(s, { env: o.env, folders: folders || o.folders, projectRoots: projectRoots || o.projectRoots, onProgress: progress, signal });
+      applyLeftovers(s, result, o.env);
+      rebuildAllowed();
+      return client(s);
     });
   });
 
@@ -676,7 +751,7 @@ function register({ store }) {
               continue;
             }
             stack.push({ d: full, depth: depth + 1 });
-          } else if (e.isFile() && /\.aepx?$/i.test(e.name)) {
+          } else if (e.isFile() && PROJECT_EXT.test(e.name)) {
             if (skipAutoSave && AUTO_SAVE.test(e.name)) skipped++;
             else found.push(full);
           }
@@ -694,7 +769,7 @@ function register({ store }) {
         const p = paths[i];
         progress({ phase: `Scanning ${path.basename(p)}`, done: i, total: paths.length });
         try {
-          results.push({ path: p, ok: true, project: client(await scan(p, () => {})) });
+          results.push({ path: p, ok: true, project: client(await scan(p, () => {}, null, { leftovers: false })) });
         } catch (err) {
           results.push({ path: p, ok: false, error: err.message });
         }

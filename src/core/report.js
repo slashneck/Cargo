@@ -38,6 +38,7 @@ const STATUS_LABELS = {
   generated: 'Solid',
   placeholder: 'Placeholder',
   unknown: 'Unknown',
+  leftover: 'Not in project',
 };
 
 function resolution(a) {
@@ -51,7 +52,8 @@ function resolution(a) {
 function assetRows(session, plan) {
   const compNames = new Map(session.comps.map((c) => [c.id, c.name]));
   return session.assets
-    .filter((a) => a.kind === 'file')
+    // A package manifest lists only what belongs to the project.
+    .filter((a) => a.kind === 'file' && !(plan && a.leftover))
     .map((a) => ({
       name: a.name,
       type: media.CATEGORY_LABELS[a.category] || a.category,
@@ -86,6 +88,7 @@ function reportData(session, { plan = null, title = 'Asset Manifest', notes = []
   }
   return {
     title,
+    labels: session.labels || null,
     generated: Date.now(),
     private: privateMode,
     project: {
@@ -125,8 +128,8 @@ function toText(data) {
   if (data.project.savedWith) lines.push(`Saved with   ${data.project.savedWith}`);
   lines.push(`Created      ${data.private ? formatDate(data.generated).slice(0, 10) : formatDate(data.generated)}`, '');
   lines.push('SUMMARY');
-  lines.push(`  Footage items    ${t.fileAssetCount}  (${t.usedCount} used, ${t.unusedCount} unused)`);
-  lines.push(`  Compositions     ${t.compCount}`);
+  lines.push(`  ${pad(data.labels ? data.labels.items : 'Footage', 16)} ${t.fileAssetCount}  (${t.usedCount} used, ${t.unusedCount} unused)`);
+  lines.push(`  ${pad(data.labels ? data.labels.comps : 'Compositions', 16)} ${t.compCount}`);
   if (t.totalSize !== undefined) {
     lines.push(`  Total on disk    ${formatBytes(t.totalSize)}`);
     lines.push(`  Used             ${formatBytes(t.usedSize)}`);

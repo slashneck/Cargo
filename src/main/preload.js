@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('cargo', {
   deleteAssetsPlan: (id, assetIds) => call('project:deleteAssetsPlan', id, assetIds),
   trashAssets: (id, files, opts, jobId) => call('project:trashAssets', id, files, opts, jobId),
   duplicates: (id, jobId) => call('project:duplicates', id, jobId),
+  leftoverSetup: (id) => call('project:leftoverSetup', id),
+  findLeftovers: (id, opts, jobId) => call('project:findLeftovers', id, opts, jobId),
   exportReport: (id, format) => call('project:export', id, format),
 
   // batch

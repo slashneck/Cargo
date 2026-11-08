@@ -23,6 +23,34 @@ export const state = {
   update: null, // newer release found on GitHub
 };
 
+// Words for the open project's program (After Effects until one is open).
+const AE_LABELS = {
+  item: 'footage item',
+  items: 'Footage',
+  folder: 'AE folder',
+  comp: 'Comp',
+  comps: 'Comps',
+  compsLong: 'Compositions',
+  topLevel: 'Top-level compositions',
+  layer: 'Layer',
+  source: 'Source',
+  effects: 'Effects',
+  effect: 'effect',
+  thirdParty: 'Third-party',
+  open: 'Open in AE',
+  openLong: 'Open this project in After Effects',
+  usedRule: 'An item is used when a layer in any composition uses it.',
+  removeUnusedHint: 'In After Effects, File › Dependencies › Remove Unused Footage removes them from the project too.',
+};
+
+export function labels() {
+  return (state.project && state.project.labels) || AE_LABELS;
+}
+
+export function appName() {
+  return (state.project && state.project.app) || 'After Effects';
+}
+
 const listeners = new Set();
 
 export function subscribe(fn) {
@@ -114,6 +142,7 @@ export function visibleAssets() {
   if (f.status === 'used') list = list.filter((a) => a.status === 'used' || a.status === 'missing');
   else if (f.status === 'unused') list = list.filter((a) => a.status === 'unused' || a.status === 'unused-missing');
   else if (f.status === 'missing') list = list.filter((a) => a.status === 'missing' || a.status === 'unused-missing' || a.status === 'placeholder');
+  else if (f.status === 'leftover') list = list.filter((a) => a.leftover);
   else if (f.status === 'favorites') list = list.filter(isFavorite);
   else if (f.status === 'tagged') list = list.filter((a) => tagsFor(a).length > 0);
   else if (f.status && f.status.startsWith('tag:')) {

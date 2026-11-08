@@ -191,6 +191,7 @@ export const STATUS_LABEL = {
   unused: 'Unused',
   missing: 'Missing',
   'unused-missing': 'Unused · missing',
+  leftover: 'Not in project',
   generated: 'Solid',
   placeholder: 'Placeholder',
   unknown: 'Unknown',
@@ -198,15 +199,20 @@ export const STATUS_LABEL = {
 
 export const STATUS_HELP = {
   used: 'Used in the project and found on disk',
-  unused: 'Not used in any composition',
+  unused: 'In the project, but not used',
+  leftover: 'On disk, but not used by this project or any other project Cargo checked',
   missing: 'Used in the project, but the file is missing',
   'unused-missing': 'Not used, and the file is missing',
-  generated: 'Solid — created inside After Effects, no file',
+  generated: 'Solid, created inside After Effects, no file',
   placeholder: 'Placeholder for footage that was never found',
   unknown: 'Could not be read',
 };
 
 export const CATEGORY_LABEL = {
+  recording: 'Recording',
+  render: 'Render',
+  sample: 'Sample',
+  stock: 'Stock sample',
   video: 'Video',
   audio: 'Audio',
   image: 'Image',
@@ -221,6 +227,10 @@ export const CATEGORY_LABEL = {
 };
 
 export const CATEGORY_PLURAL = {
+  recording: 'Recordings',
+  render: 'Renders',
+  sample: 'Samples',
+  stock: 'Stock samples',
   video: 'Video',
   audio: 'Audio',
   image: 'Images',
@@ -235,6 +245,10 @@ export const CATEGORY_PLURAL = {
 };
 
 export const CATEGORY_COLORS = {
+  recording: '#ff7ab8',
+  render: '#7aa7ff',
+  sample: '#3ddc97',
+  stock: '#6b6b6b',
   video: '#00d4ff',
   audio: '#3ddc97',
   image: '#c9a7ff',

@@ -2,16 +2,18 @@
 
 import { h, btn, fmtBytes, fmtDuration, fmtFps, plural } from '../util.js';
 import { icon, CATEGORY_ICONS } from '../icons.js';
-import { state, emit, compById, compDependencies } from '../state.js';
+import { state, emit, compById, compDependencies, labels } from '../state.js';
 import { filterByComp, focusAsset } from '../actions.js';
 import { packageDialog } from '../dialogs.js';
 
 export function renderComps() {
   const p = state.project;
   if (!p.comps.length) {
-    return h('div.pane', h('div.pane-inner', h('div.empty-note', 'This project has no compositions.')));
+    return h('div.pane', h('div.pane-inner', h('div.empty-note', `This project has no ${labels().comps.toLowerCase()}.`)));
   }
-  const roots = p.comps.filter((c) => c.usedIn.length === 0).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  // In FL Studio the playlist is the top; patterns that aren't on it don't play.
+  const fl = p.format === 'flp';
+  const roots = p.comps.filter((c) => (fl ? c.kind === 'arrangement' : c.usedIn.length === 0)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   // Comps only reachable through cycles would otherwise never show up.
   const reachable = new Set();
   for (const r of roots) for (const id of compDependencies(r.id).comps) reachable.add(id);
@@ -21,9 +23,9 @@ export function renderComps() {
 
   const left = h(
     'div.split-left.dep-tree',
-    h('div.side-title', { style: { padding: '4px 8px 8px' } }, h('span', 'Top-level compositions'), h('span', { style: { textTransform: 'none', letterSpacing: 0, fontWeight: 400 } }, `${roots.length} of ${p.comps.length}`)),
+    h('div.side-title', { style: { padding: '4px 8px 8px' } }, h('span', labels().topLevel), h('span', { style: { textTransform: 'none', letterSpacing: 0, fontWeight: 400 } }, `${roots.length} of ${p.comps.length}`)),
     ...roots.flatMap((c) => compNode(c, 0, new Set())),
-    orphans.length ? h('div.side-title', { style: { padding: '14px 8px 8px' } }, 'Only used by each other') : null,
+    orphans.length ? h('div.side-title', { style: { padding: '14px 8px 8px' } }, fl ? 'Not on the playlist' : 'Only used by each other') : null,
     ...orphans.flatMap((c) => compNode(c, 0, new Set())),
   );
   const right = h('div.split-right', details(compById(state.compFocus)));
@@ -77,9 +79,9 @@ function compNode(c, depth, ancestors) {
         },
         icon('chevronRight', 'sm'),
       ),
-      icon('comp'),
+      icon(c.kind === 'arrangement' ? 'list' : 'comp'),
       h('span.label', c.name),
-      h('span.size', `${c.layerCount} layers`),
+      h('span.size', plural(c.layerCount, layerNoun(c))),
     ),
   ];
   if (!open || cyclic) return rows;
@@ -107,8 +109,12 @@ function compNode(c, depth, ancestors) {
   return rows;
 }
 
+function layerNoun(c) {
+  return c.kind === 'arrangement' ? 'item' : c.kind === 'pattern' ? 'channel' : 'layer';
+}
+
 function details(c) {
-  if (!c) return h('div.preview-empty', icon('comp'), h('div', 'Select a composition'));
+  if (!c) return h('div.preview-empty', icon('comp'), h('div', `Select a ${labels().comp.toLowerCase()}`));
   const p = state.project;
   const { footage, comps } = compDependencies(c.id);
   const assets = p.assets.filter((a) => footage.has(a.id));
@@ -128,25 +134,25 @@ function details(c) {
   return h(
     'div.col',
     { style: { gap: '16px', maxWidth: '760px' } },
-    h('div', h('div.preview-title', { style: { fontSize: '18px' } }, c.name), h('div.dim', { style: { marginTop: '4px' } }, [c.width && c.height ? `${c.width}×${c.height}` : null, c.fps ? fmtFps(c.fps) : null, c.duration ? fmtDuration(c.duration) : null, plural(c.layerCount, 'layer')].filter(Boolean).join(' · '))),
+    h('div', h('div.preview-title', { style: { fontSize: '18px' } }, c.name), h('div.dim', { style: { marginTop: '4px' } }, [c.width && c.height ? `${c.width}×${c.height}` : null, c.fps ? fmtFps(c.fps) : null, c.duration ? fmtDuration(c.duration) : null, plural(c.layerCount, layerNoun(c))].filter(Boolean).join(' · '))),
     h(
       'div.cards',
       { style: { gridTemplateColumns: 'repeat(3, minmax(0,1fr))' } },
-      h('div.card.kpi', h('div.label', 'Footage it needs'), h('div.value', fmtBytes(size)), h('div.sub', plural(files.length, 'file'))),
-      h('div.card.kpi', h('div.label', 'Nested comps'), h('div.value', String(comps.size - 1)), h('div.sub', 'including deeper levels')),
+      h('div.card.kpi', h('div.label', `${labels().items} it needs`), h('div.value', fmtBytes(size)), h('div.sub', plural(files.length, 'file'))),
+      h('div.card.kpi', h('div.label', `${labels().comps} inside`), h('div.value', String(comps.size - 1)), h('div.sub', 'including deeper levels')),
       h(`div.card.kpi${missing.length ? '.warn' : ''}`, h('div.label', 'Missing'), h('div.value', String(missing.length)), h('div.sub', missing.length ? 'files not found' : 'all files found')),
     ),
-    h('div.row', btn('Show its footage', { icon: 'list', onclick: () => filterByComp(c.id) }), btn('Package this comp…', { cls: 'primary', icon: 'package', onclick: () => packageDialog({ assetIds: [...footage], title: c.name }) })),
+    h('div.row', btn('Show its files', { icon: 'list', onclick: () => filterByComp(c.id) }), btn(c.kind === 'arrangement' ? 'Package the playlist…' : `Package this ${labels().comp.toLowerCase()}…`, { cls: 'primary', icon: 'package', onclick: () => packageDialog({ assetIds: [...footage], title: c.name }) })),
     thirdParty.length ? h('div.notice.info', icon('plug'), h('div', h('b', 'Needs plugins: '), thirdParty.map((mn) => effectInfo.get(mn).displayName).join(', '))) : null,
     parents.length
       ? h('div', h('div.preview-section-title', 'Used in'), h('div.link-list', ...parents.map((pc) => h('button.link-item', { type: 'button', onclick: () => { state.compFocus = pc.id; emit('content'); } }, icon('comp', 'sm'), pc.name))))
-      : h('div.dimmer', 'Top-level composition — no other comp uses it.'),
+      : h('div.dimmer', c.kind === 'arrangement' ? 'The song’s playlist.' : c.kind === 'pattern' ? 'Not on the playlist, so it doesn’t play in the song.' : 'Top-level composition — no other comp uses it.'),
     h(
       'div',
-      h('div.preview-section-title', 'Layers'),
+      h('div.preview-section-title', c.kind === 'arrangement' ? 'On the playlist' : `${labels().layer}s`),
       h(
         'table.simple-table',
-        h('thead', h('tr', h('th', '#'), h('th', 'Layer'), h('th', 'Source'), h('th', 'Effects'))),
+        h('thead', h('tr', h('th', '#'), h('th', c.kind === 'arrangement' ? 'Item' : labels().layer), h('th', labels().source), h('th', c.kind === 'arrangement' ? 'Clips' : labels().effects))),
         h(
           'tbody',
           ...c.layers.slice(0, 300).map((l) => {
@@ -155,8 +161,8 @@ function details(c) {
               'tr',
               h('td.dim', String(l.index)),
               h('td.strong', l.name || (src ? src.name : '—')),
-              h('td', src ? h('span.row', icon(src.layerCount !== undefined ? 'comp' : CATEGORY_ICONS[src.category] || 'file', 'sm'), h('span.ellipsis', src.name)) : h('span.dimmer', 'Text, shape, camera or light')),
-              h('td.dim', l.effects.map((mn) => (effectInfo.get(mn) || { displayName: mn }).displayName).join(', ')),
+              h('td', src ? h('span.row', icon(src.layerCount !== undefined ? 'comp' : CATEGORY_ICONS[src.category] || 'file', 'sm'), h('span.ellipsis', src.name)) : h('span.dimmer', p.format === 'flp' ? 'Instrument, no sample' : 'Text, shape, camera or light')),
+              h('td.dim', c.kind === 'arrangement' ? (l.count ? `×${l.count}` : '') : l.effects.map((mn) => (effectInfo.get(mn) || { displayName: mn }).displayName).join(', ')),
             );
           }),
         ),

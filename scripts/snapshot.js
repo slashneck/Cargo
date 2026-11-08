@@ -9,8 +9,9 @@ const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-const outDir = path.resolve(process.argv.find((a, i) => i >= 2 && !a.startsWith('-') && !/\.aepx?$/i.test(a) && !a.endsWith('snapshot.js')) || 'snapshots');
-const hasProject = process.argv.some((a) => /\.aepx?$/i.test(a));
+const PROJECT = /\.(aepx?|flp)$/i;
+const outDir = path.resolve(process.argv.find((a, i) => i >= 2 && !a.startsWith('-') && !PROJECT.test(a) && !a.endsWith('snapshot.js')) || 'snapshots');
+const hasProject = process.argv.some((a) => PROJECT.test(a));
 fs.mkdirSync(outDir, { recursive: true });
 // Keep test runs out of the real recent list and settings.
 app.setPath('userData', path.join(outDir, 'userdata'));
@@ -35,7 +36,14 @@ app.on('browser-window-created', (_e, win) => {
       await wait(hasProject ? 2500 : 1200);
       if (!hasProject) {
         await shot('01-welcome');
-      } else if (process.argv.filter((a) => /\.aepx?$/i.test(a)).length > 1) {
+        if (versionArg) {
+          // The update check runs a few seconds after start.
+          for (let i = 0; i < 40 && !(await js(`!!document.querySelector('.update-pill')`)); i++) await wait(500);
+          await shot('02-update-available');
+          await js(`document.querySelector('.update-pill') && document.querySelector('.update-pill').click()`);
+          await shot('03-update-dialog');
+        }
+      } else if (process.argv.filter((a) => PROJECT.test(a)).length > 1) {
         // Several projects open the batch view.
         await wait(1500);
         await shot('01-batch');
@@ -77,6 +85,15 @@ app.on('browser-window-created', (_e, win) => {
         await js(`document.querySelector('[title="Help"]').click()`);
         await shot('14-help');
         await js(`document.querySelector('.modal-head .close').click()`);
+        const looked = await js(`!!([...document.querySelectorAll('.banner .btn')].find(b => b.textContent.includes('Where Cargo looked')))`);
+        if (looked) {
+          await js(`[...document.querySelectorAll('.banner .btn')].find(b => b.textContent.includes('Where Cargo looked')).click()`);
+          await shot('15-leftovers-dialog');
+          await js(`document.querySelector('.modal-head .close').click()`);
+          await js(`[...document.querySelectorAll('.banner .btn')].find(b => b.textContent.includes('Show them')).click()`);
+          await js(`document.querySelector('.trow') && document.querySelector('.trow').dispatchEvent(new MouseEvent('mousedown', {bubbles: true}))`);
+          await shot('16-leftovers-list');
+        }
         if (process.argv.includes('--flow')) {
           // Package for real into the project's folder and show the result.
           await js(`[...document.querySelectorAll('.actionbar .btn')].find(b => b.textContent.includes('Package Project')).click()`);

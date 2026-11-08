@@ -1,11 +1,11 @@
 // Operations triggered from the UI. They talk to the main process through
 // window.cargo and update the shared state.
 
-import { state, emit, resetProjectView, invalidate, selectedAssets, tagsFor, isFavorite, assetById, compById } from './state.js';
+import { state, emit, resetProjectView, invalidate, selectedAssets, tagsFor, isFavorite, assetById, compById, appName } from './state.js';
 import { runJob, errorDialog, toast, openMenu, modal } from './ui.js';
 import { h, btn, checkbox, uid, basename, fmtBytes, plural } from './util.js';
 import { clearThumbCache } from './views/table.js';
-import { deleteUnusedDialog, deleteAssetsDialog } from './dialogs.js';
+import { deleteUnusedDialog, deleteAssetsDialog, leftoversDialog } from './dialogs.js';
 
 const api = window.cargo;
 
@@ -147,17 +147,17 @@ async function findIn(folder) {
 
 export async function scanFolder(dir) {
   try {
-    const folder = dir || (await api.openFolder({ title: 'Choose a folder with After Effects projects' }));
+    const folder = dir || (await api.openFolder({ title: 'Choose a folder with projects' }));
     if (!folder) return;
     const go = btn('Scan', { cls: 'primary', icon: 'search' });
     let skip = state.store.settings.skipAutoSave !== false;
     const m = modal({
       title: 'Scan a folder',
-      subtitle: 'Every After Effects project in this folder and its subfolders is scanned.',
+      subtitle: 'Every After Effects and FL Studio project in this folder and its subfolders is scanned.',
       icon: 'batch',
       body: [
         h('div.path-box', h('div.mono', folder)),
-        checkbox({ checked: skip, label: 'Skip auto-save projects', hint: 'Leaves out After Effects auto-save folders and files like “Project auto-save 3.aep”.', onchange: (v) => (skip = v) }),
+        checkbox({ checked: skip, label: 'Skip auto-save projects', hint: 'Leaves out auto-saves and backups, like “Project auto-save 3.aep” or “Song (overwritten at 1503).flp”.', onchange: (v) => (skip = v) }),
       ],
       footer: (close) => [h('div.info'), btn('Cancel', { onclick: () => close(null) }), go],
     });
@@ -166,7 +166,7 @@ export async function scanFolder(dir) {
     if (skip !== (state.store.settings.skipAutoSave !== false)) await refreshStore(await api.setSetting('skipAutoSave', skip));
     const { paths, skipped } = await findIn(folder);
     if (!paths.length) {
-      toast(skipped ? `Only auto-save projects were found (${skipped}).` : 'No After Effects projects were found in that folder.');
+      toast(skipped ? `Only auto-save projects were found (${skipped}).` : 'No After Effects or FL Studio projects were found in that folder.');
       return;
     }
     await batchScan(paths);
@@ -183,8 +183,8 @@ export async function addProjectsToBatch() {
 
 /** Files or folders dropped onto the window. */
 export async function handleDropped(paths) {
-  const projects = paths.filter((p) => /\.aepx?$/i.test(p));
-  const others = paths.filter((p) => !/\.aepx?$/i.test(p));
+  const projects = paths.filter((p) => /\.(aepx?|flp)$/i.test(p));
+  const others = paths.filter((p) => !/\.(aepx?|flp)$/i.test(p));
   if (projects.length === 1 && others.length === 0) return openProject(projects[0]);
   let all = [...projects];
   for (const dir of others) {
@@ -196,7 +196,7 @@ export async function handleDropped(paths) {
   }
   all = [...new Set(all)];
   if (!all.length) {
-    toast('Drop an After Effects project (.aep or .aepx) or a folder that contains some.', { tone: 'bad' });
+    toast('Drop an After Effects or FL Studio project (.aep, .aepx, .flp), or a folder that contains some.', { tone: 'bad' });
     return;
   }
   if (all.length === 1) return openProject(all[0]);
@@ -216,7 +216,7 @@ export async function reveal(p) {
 export async function openInAE() {
   try {
     await api.openProject(state.project.id);
-    toast('Opening in After Effects…', { timeout: 2500 });
+    toast(`Opening in ${appName()}…`, { timeout: 2500 });
   } catch (err) {
     errorDialog(err.message);
   }
@@ -314,7 +314,7 @@ export async function locate(a) {
     if (!target) return;
     const project = await runJob('Relinking', (jobId) => api.relink(state.project.id, [{ assetId: a.id, path: target }], jobId), { icon: 'link', delay: 400, cancellable: false });
     applyProjectUpdate(project);
-    toast(`Relinked “${a.name}”. Save a relinked copy of the project to keep it for After Effects.`, { tone: 'ok', timeout: 6000 });
+    toast(`Relinked “${a.name}”. Save a relinked copy of the project to keep it for ${appName()}.`, { tone: 'ok', timeout: 6000 });
   } catch (err) {
     errorDialog(err.message);
   }
@@ -419,15 +419,19 @@ export function showComp(id) {
 export function deleteMenu(anchor) {
   const p = state.project;
   const selected = p.assets.filter((a) => state.selection.has(a.id) && a.kind === 'file' && a.exists);
-  const onDisk = p.assets.filter((a) => a.kind === 'file' && a.exists);
+  const onDisk = p.assets.filter((a) => a.kind === 'file' && a.exists && !a.leftover);
+  const leftovers = p.assets.filter((a) => a.leftover);
   openMenu(
     anchor,
     [
       { header: 'Move to Recycle Bin' },
       { label: 'Unused files…', icon: 'trash', disabled: !p.totals.unusedFileCount, onclick: deleteUnusedDialog },
       { label: selected.length ? `Selected files (${selected.length})…` : 'Selected files…', icon: 'check', disabled: !selected.length, kbd: 'Del', onclick: () => deleteAssetsDialog({ assetIds: selected.map((a) => a.id) }) },
+      { label: leftovers.length ? `Not in project (${leftovers.length})…` : 'Not in project…', icon: 'mic', disabled: !leftovers.length, onclick: () => deleteAssetsDialog({ assetIds: leftovers.map((a) => a.id) }) },
       'sep',
       { label: 'All media of this project…', icon: 'alert', danger: true, disabled: !onDisk.length, onclick: () => deleteAssetsDialog() },
+      'sep',
+      { label: 'Find leftover files…', icon: 'search', onclick: leftoversDialog },
     ],
     { minWidth: 240 },
   );

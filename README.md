@@ -14,6 +14,8 @@
   &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="#features">Features</a>
   &nbsp;&nbsp;|&nbsp;&nbsp;
+  <a href="#fl-studio">FL Studio</a>
+  &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="#packaging">Packaging</a>
   &nbsp;&nbsp;|&nbsp;&nbsp;
   <a href="#building">Build it yourself</a>
@@ -21,14 +23,14 @@
 
 <br>
 
-Cargo opens After Effects projects without After Effects and shows you every file they use. Drop an `.aep` on it and
-you see which footage is used, which is dead weight and which is missing. Then package the project for a client,
-archive it to another drive, or clean up what you don't need anymore.
+Cargo opens After Effects and FL Studio projects without the programs and shows you every file they use. Drop an
+`.aep` or `.flp` on it and you see what's used, what's dead weight and what's missing. Then package the project for a
+client, archive it to another drive, or clean up what you don't need anymore.
 
 ## Features
 
-**Every file at a glance.** Footage, audio, image sequences, stills, graphics and data files, with size, resolution,
-duration, frame rate and where they sit in your project panel. Thumbnails and a preview for images, video and audio.
+**Every file at a glance.** Footage, audio, image sequences, stills, graphics, data files, samples, recordings and
+renders, with size, resolution, duration, frame rate and where they sit in your project. Thumbnails and a preview for images, video and audio.
 Search, filter by type or status and sort however you like, even with thousands of items.
 
 **Used, unused, missing.** An item counts as used when a layer in any composition uses it. Data files that are only read
@@ -44,22 +46,42 @@ one go. Favorites, files tagged `keep` and footage another open project still ne
 project with all its footage to another drive, checks the copy, and can then remove the originals.
 
 **Insights.** How big the project really is, how much you'd save by deleting what's unused, how long it takes to send,
-the largest files, and which comps are the heaviest. The effects tab lists every plugin the project needs, with
-third-party ones flagged.
+the largest files, and which comps or patterns are the heaviest. The effects and plugins tab lists every plugin the
+project needs, with third-party ones flagged.
 
 **More.** Duplicate finder, batch scanning of whole folders (auto-saves are skipped), manifests as PDF, text, CSV or
 JSON, tags and favorites, and a history of everything you packaged.
 
+## FL Studio
+
+Recording vocals means a lot of takes, and FL Studio keeps every one of them in `Audio\Recorded` even after you delete
+the channel. Renders and consolidated clips pile up in `Audio\Rendered` the same way. Open an `.flp` in Cargo and it
+shows:
+
+- **What the song uses.** A sample counts as used when it's on the playlist, or when its channel plays notes in a pattern
+  that is. Takes still sitting in the channel rack without being used show up as unused.
+- **What isn't in the project at all.** Recordings, renders and samples in your recording and render folders and the
+  project's folder that the project doesn't reference. Before calling a file a leftover, Cargo reads your other FL
+  Studio projects and keeps every file one of them still uses. "Where Cargo looked" shows the folders it searched, and you
+  can add the folders where you keep your projects.
+- **Recordings, renders, samples and stock samples** sorted apart, with the length of every WAV, the channel each sample
+  sits on, and which VST plugins the project needs.
+
+Packages put the samples next to the `.flp`, which is where FL Studio looks for them, and leave FL Studio's stock samples
+out unless you want them.
+
 ## Packaging
 
-Package Project writes a zip or a folder named `Project_Package_YYYY-MM-DD` with the project, its footage sorted by type
-or by your project folders, a `MANIFEST.txt` and a `Relink Footage.jsx` script. Unused footage stays out unless you want
-it, and a single composition can be packaged on its own.
+Package Project writes a zip or a folder named `Project_Package_YYYY-MM-DD` with the project, its files sorted by type
+or by your project folders, and a `MANIFEST.txt`. After Effects packages also get a `Relink Footage.jsx` script. Unused
+files stay out unless you want them, and a single composition or pattern can be packaged on its own.
 
-Packages are **private** by default. File paths inside an `.aep` contain your user name and folder structure, and its
-metadata keeps a save history with times. A private package points every path to a neutral folder named after the
-package, removes that history, and keeps paths, dates and version info out of the manifest. Extract it to `C:\` and
-After Effects finds everything, or open it anywhere and run `Relink Footage.jsx` (File › Scripts › Run Script File).
+Packages are **private** by default. File paths inside a project contain your user name and folder structure, an `.aep`
+keeps a save history with times, and an `.flp` keeps your FL Studio licensee name and the project's dates. A private
+package points every path to a neutral folder named after the package, removes that information, and keeps paths, dates
+and version info out of the manifest. FL Studio finds the samples next to the project wherever you open it. For After
+Effects, extract the package to `C:\` and everything links up, or open it anywhere and run `Relink Footage.jsx`
+(File › Scripts › Run Script File).
 
 Your original project is never changed. Packages, archives and relinks always write new files.
 
@@ -93,10 +115,13 @@ the new setup is downloaded, checked against its SHA-256 checksum and run. You c
 
 - Fonts aren't packaged, and neither are plugins. The manifest lists both so whoever opens the project knows what to install.
 - Delete Unused removes files, not project items. In After Effects, File › Dependencies › Remove Unused Footage tidies up
-  the project itself.
+  the project itself; in FL Studio, delete the channels you no longer need.
+- Leftovers are only as safe as the projects Cargo can see. Add the folders where you keep your projects under "Where
+  Cargo looked", and everything still goes to the Recycle Bin first.
 - Projects saved on a Mac have `/Volumes/...` paths and show as missing on Windows until you run Find Missing.
-- If Cargo reads a project wrong, please [open an issue](https://github.com/slashneck/Cargo/issues) with the After Effects
-  version. A small sample project helps most. [docs/aep-format.md](docs/aep-format.md) explains how Cargo reads `.aep` files.
+- If Cargo reads a project wrong, please [open an issue](https://github.com/slashneck/Cargo/issues) with the program and
+  its version. A small sample project helps most. [docs/aep-format.md](docs/aep-format.md) and
+  [docs/flp-format.md](docs/flp-format.md) explain how Cargo reads both formats.
 
 ## Building
 

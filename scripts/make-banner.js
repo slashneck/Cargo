@@ -33,7 +33,7 @@ function page({ width, height, scale, chips }) {
   .chip{border:${s(2)} solid #3a3a3a;border-radius:999px;padding:${s(10)} ${s(26)};color:#e8e8e8;font-size:${s(30)};font-weight:600}
   </style></head><body>
   <div class="mark">${MARK}</div>
-  <div class="text"><h1>Cargo</h1><p>After Effects projects, neatly packed.</p>
+  <div class="text"><h1>Cargo</h1><p>Projects, neatly packed.</p>
   <div class="chips">${chips.map((c) => `<span class="chip">${c}</span>`).join('')}</div></div>
   </body></html>`;
 }
@@ -51,7 +51,7 @@ app.disableHardwareAcceleration();
 app.whenReady().then(async () => {
   fs.mkdirSync(OUT, { recursive: true });
   const win = new BrowserWindow({ show: false, width: 2560, height: 840, frame: false, useContentSize: true, webPreferences: { offscreen: true } });
-  const chips = ['Scan without After Effects', 'Package and clean up', 'Free and open source'];
+  const chips = ['After Effects', 'FL Studio', 'Free and open source'];
   await render(win, page({ width: 2560, height: 840, scale: 1, chips }), 2560, 840, path.join(OUT, 'banner.png'));
   await render(win, page({ width: 1280, height: 640, scale: 0.56, chips }), 1280, 640, path.join(OUT, 'social-preview.png'));
   console.log(`Banner written to ${OUT}`);

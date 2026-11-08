@@ -545,6 +545,37 @@ kbd {
   background: var(--bad);
   box-shadow: 0 0 0 3px rgba(255, 77, 77, 0.12);
 }
+.dot.leftover {
+  background: #b18cff;
+  box-shadow: 0 0 0 3px rgba(177, 140, 255, 0.14);
+}
+.pill.leftover {
+  color: #c9a7ff;
+  border-color: rgba(177, 140, 255, 0.4);
+}
+.banner.leftover {
+  background: rgba(177, 140, 255, 0.07);
+  color: #d9c6ff;
+}
+.app-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0 5px;
+  border-radius: 3px;
+  line-height: 15px;
+  border: 1px solid var(--line-2);
+  color: var(--text-3);
+}
+.app-badge.flp {
+  color: #ffb36b;
+  border-color: rgba(255, 179, 107, 0.4);
+}
+.app-badge.aep,
+.app-badge.aepx {
+  color: #b9a7ff;
+  border-color: rgba(185, 167, 255, 0.4);
+}
 .dot.unused-missing {
   background: transparent;
   border: 1.5px solid var(--bad);

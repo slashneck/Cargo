@@ -2,7 +2,7 @@
 
 import { h, btn, fmtBytes, fmtTime, pct, plural, CATEGORY_PLURAL, CATEGORY_COLORS } from '../util.js';
 import { icon, CATEGORY_ICONS } from '../icons.js';
-import { state, emit, invalidate, compDependencies } from '../state.js';
+import { state, emit, invalidate, compDependencies, labels, appName } from '../state.js';
 import { focusAsset, filterByComp } from '../actions.js';
 import { deleteUnusedDialog, missingDialog, packageDialog } from '../dialogs.js';
 
@@ -30,9 +30,9 @@ export function renderInsights() {
   const cards = h(
     'div.cards',
     kpi('Total on disk', fmtBytes(t.totalSize), `${plural(t.fileCount, 'file')} · project file ${fmtBytes(p.fileSize)}`, { ic: 'drive' }),
-    kpi('Used', fmtBytes(t.usedSize), `${plural(t.usedCount, 'item')} in ${plural(t.compCount, 'comp')}`, { ic: 'checkCircle' }),
+    kpi('Used', fmtBytes(t.usedSize), `${plural(t.usedCount, 'item')} in ${plural(p.comps.filter((c) => c.kind !== 'arrangement').length, labels().comp.toLowerCase())}`, { ic: 'checkCircle' }),
     kpi('Reclaimable', fmtBytes(t.unusedSize), t.unusedSize ? `${deadPct.toFixed(0)}% of the project is dead weight` : 'Nothing unused — nice', { cls: 'accent', ic: 'trash' }),
-    kpi('Missing', String(missing.length), missing.length ? `${usedMissing.length} used in comps` : 'Every file was found', { ic: 'alert', cls: missing.length ? 'warn' : '' }),
+    kpi('Missing', String(missing.length), missing.length ? `${usedMissing.length} used by the project` : 'Every file was found', { ic: 'alert', cls: missing.length ? 'warn' : '' }),
   );
 
   // Before / after
@@ -141,7 +141,7 @@ export function renderInsights() {
   const compMax = Math.max(1, ...compSizes.map((x) => x.size));
   const comps = h(
     'div.card',
-    h('h3', 'Top-level compositions', h('span.dim', 'footage they pull in')),
+    h('h3', p.format === 'flp' ? 'Playlist and patterns' : 'Top-level compositions', h('span.dim', 'files they use')),
     compSizes.length
       ? h(
           'div.bars',
@@ -156,12 +156,12 @@ export function renderInsights() {
             ),
           ),
         )
-      : h('div.dim', 'No compositions.'),
+      : h('div.dim', `No ${labels().comps.toLowerCase()}.`),
   );
 
   const notices = [];
-  if (usedMissing.length) notices.push(h('div.notice.warn', icon('alert'), h('div.grow', h('b', `${plural(usedMissing.length, 'used file')} ${usedMissing.length === 1 ? 'is' : 'are'} missing.`), ' Packages won’t include them and After Effects will show color bars.'), btn('Find missing…', { cls: 'sm', onclick: missingDialog })));
-  if (thirdParty.length) notices.push(h('div.notice.info', icon('plug'), h('div', h('b', `${plural(thirdParty.length, 'third-party effect')}: `), thirdParty.map((e) => e.displayName).join(', '), '. Whoever opens this project needs these plugins.')));
+  if (usedMissing.length) notices.push(h('div.notice.warn', icon('alert'), h('div.grow', h('b', `${plural(usedMissing.length, 'used file')} ${usedMissing.length === 1 ? 'is' : 'are'} missing.`), ` Packages won’t include them and ${appName()} won’t find them.`), btn('Find missing…', { cls: 'sm', onclick: missingDialog })));
+  if (thirdParty.length) notices.push(h('div.notice.info', icon('plug'), h('div', h('b', `${plural(thirdParty.length, p.format === 'flp' ? 'VST plugin' : 'third-party effect')}: `), thirdParty.map((e) => e.displayName).join(', '), '. Whoever opens this project needs these plugins.')));
   if (t.placeholderCount) notices.push(h('div.notice.warn', icon('placeholder'), h('div', h('b', `${plural(t.placeholderCount, 'placeholder')}`), ' stand in for footage that was never found.')));
   for (const w of p.warnings) notices.push(h('div.notice.warn', icon('alert'), h('div', w)));
   if (!notices.length) notices.push(h('div.notice.ok', icon('checkCircle'), h('div', h('b', 'Healthy project. '), 'Every used file was found and no third-party plugins are needed.')));

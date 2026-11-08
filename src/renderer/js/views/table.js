@@ -18,7 +18,7 @@ const COLUMNS = [
   { key: 'resolution', label: 'Resolution', cls: 'r.c-res' },
   { key: 'duration', label: 'Duration', cls: 'r' },
   { key: 'modified', label: 'Modified', cls: 'c-mod' },
-  { key: 'usedIn', label: 'Used', cls: 'r', title: 'Number of compositions using this item' },
+  { key: 'usedIn', label: 'Used', cls: 'r', title: 'How many comps or patterns use this item' },
   { key: null, label: 'Tags', cls: 'c-tags' },
 ];
 
@@ -95,7 +95,7 @@ export class AssetTable {
       this.empty,
       icon(filtered ? 'search' : 'package'),
       h('div', { style: { color: 'var(--text-2)', fontWeight: '500' } }, filtered ? 'Nothing matches these filters' : 'This project has no footage'),
-      h('div', filtered ? 'Try clearing the search or picking “All assets”.' : 'Compositions, text and shape layers don’t need any files.'),
+      h('div', filtered ? 'Try clearing the search or picking “All assets”.' : 'Nothing in this project uses a file.'),
     );
   }
 

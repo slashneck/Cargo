@@ -19,7 +19,7 @@ let mainWindow = null;
 let pendingOpen = [];
 
 function projectArgs(argv) {
-  return argv.filter((a) => /\.aepx?$/i.test(a) && !a.startsWith('--'));
+  return argv.filter((a) => /\.(aepx?|flp)$/i.test(a) && !a.startsWith('--'));
 }
 
 function createWindow() {

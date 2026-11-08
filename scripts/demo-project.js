@@ -1,20 +1,24 @@
 'use strict';
 
-// Creates a demo After Effects project with real footage files so Cargo can
-// be tried (and tested) without an existing project.
+// Creates a demo project with real media files so Cargo can be tried (and
+// tested) without an existing project.
 //
-//   node scripts/demo-project.js [target-folder]
+//   node scripts/demo-project.js [target-folder]        After Effects
+//   node scripts/demo-project.js [target-folder] --fl   FL Studio
 //
-// The project uses footage, audio, a PNG sequence, precomps, a third-party
-// effect, an expression-driven JSON file, one missing file, unused files and
-// a duplicate copy.
+// The After Effects project uses footage, audio, a PNG sequence, precomps, a
+// third-party effect, an expression-driven JSON file, one missing file,
+// unused files and a duplicate copy. The FL Studio one comes with its own
+// user folder: vocal takes in Audio\Recorded (some deleted from the project,
+// one used by another song), renders, a VST and a missing sample. Point
+// Cargo at that folder with the CARGO_FL_USER_DIR environment variable.
 
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 const B = require('../test/helpers/buildAep');
 
-const target = path.resolve(process.argv[2] || path.join(process.cwd(), 'Cargo Demo'));
+const target = path.resolve(process.argv.slice(2).find((a) => !a.startsWith('--')) || path.join(process.cwd(), 'Cargo Demo'));
 
 function crc32(buf) {
   return zlib.crc32(buf);
@@ -101,6 +105,68 @@ function put(rel, data) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, data);
   return p;
+}
+
+function flDemo() {
+  const F = require('../test/helpers/buildFlp');
+  const user = 'FL Studio';
+  const rec = (name, secs, freqs) => put(`${user}/Audio/Recorded/${name}`, wav(secs, freqs));
+  const takes = {
+    v1: rec('Night Drive_Vox Lead_01.wav', 6, [220]),
+    v2: rec('Night Drive_Vox Lead_02.wav', 7, [233]),
+    v3: rec('Night Drive_Vox Lead_03.wav', 6, [247]),
+    v4: rec('Night Drive_Vox Lead_04.wav', 8, [262]),
+    adlib1: rec('Night Drive_Adlibs_01.wav', 4, [330]),
+    adlib2: rec('Night Drive_Adlibs_02.wav', 3, [349]),
+    harmony: rec('Night Drive_Harmony_01.wav', 6, [294, 370]),
+    other: rec('Summer Tape_Vox_01.wav', 5, [196]),
+  };
+  const ren = (name, secs, freqs) => put(`${user}/Audio/Rendered/${name}`, wav(secs, freqs));
+  const renders = {
+    melody: ren('Melody (consolidated).wav', 8, [440, 554]),
+    oldBounce: ren('Melody old bounce.wav', 8, [440]),
+    drums: ren('Drums print v1.wav', 8, [60]),
+  };
+  const songDir = `${user}/Projects/Night Drive`;
+  const kick = put(`${songDir}/Samples/Kick Punchy.wav`, wav(1, [55]));
+  const snare = put(`${songDir}/Samples/Snare Crack.wav`, wav(1, [180]));
+  const hat = put(`${songDir}/Samples/Hat Closed.wav`, wav(0.5, [3000]));
+  const shaker = put(`${songDir}/Samples/Perc Shaker.wav`, wav(1, [2500]));
+  const song = F.project({
+    title: 'Night Drive',
+    licensee: 'Demo User',
+    channels: [
+      { iid: 0, name: 'Kick', sample: kick },
+      { iid: 1, name: 'Snare', sample: snare },
+      { iid: 2, name: 'Hats', sample: hat },
+      { iid: 3, name: 'Shaker', sample: shaker },
+      { iid: 4, name: 'Vox Lead', sample: takes.v3 },
+      { iid: 5, name: 'Vox Lead (alt)', sample: takes.v4 },
+      { iid: 6, name: 'Adlibs', sample: takes.adlib2 },
+      { iid: 7, name: 'Harmony', sample: takes.harmony },
+      { iid: 8, name: 'Melody (Resampled)', sample: renders.melody },
+      { iid: 9, name: 'Lead Synth', vst: { name: 'Serum', vendor: 'Xfer Records', path: 'C:\\Program Files\\Common Files\\VST3\\Serum.vst3' } },
+      { iid: 10, name: 'Piano', plugin: 'FL Keys' },
+      { iid: 11, name: 'Old Kick', sample: 'D:\\Sample Packs\\Drums\\Kick Old.wav' },
+    ],
+    patterns: [
+      { iid: 1, name: 'Drums', channels: [0, 0, 1, 2, 2, 2, 11] },
+      { iid: 2, name: 'Lead', channels: [9, 9, 9] },
+      { iid: 3, name: 'Keys', channels: [10, 10] },
+      { iid: 4, name: 'Shaker idea', channels: [3] },
+    ],
+    playlist: [{ pattern: 1 }, { pattern: 1 }, { pattern: 2 }, { pattern: 3 }, { channel: 4 }, { channel: 6 }, { channel: 7 }, { channel: 8 }],
+    mixer: [{ plugin: 'Fruity Reeverb 2' }, { plugin: 'Fruity Limiter' }],
+  });
+  const songPath = put(`${songDir}/Night Drive.flp`, song);
+  put(`${user}/Projects/Summer Tape/Summer Tape.flp`, F.project({ title: 'Summer Tape', channels: [{ iid: 0, name: 'Vox', sample: takes.other }], playlist: [{ channel: 0 }] }));
+  console.log(songPath);
+  console.log(`FL Studio user folder: ${path.join(target, user)}`);
+}
+
+if (process.argv.includes('--fl')) {
+  flDemo();
+  process.exit(0);
 }
 
 const f = {

@@ -2,7 +2,7 @@
 
 import { h, btn, iconBtn, replace, fmtBytes, plural, CATEGORY_PLURAL, debounce } from '../util.js';
 import { icon } from '../icons.js';
-import { state, emit, invalidate, visibleAssets, compById } from '../state.js';
+import { state, emit, invalidate, visibleAssets, compById, labels, appName } from '../state.js';
 import { AssetTable } from './table.js';
 import { renderSidebar } from './sidebar.js';
 import { renderPreview } from './preview.js';
@@ -11,13 +11,13 @@ import { renderComps } from './comps.js';
 import { renderEffects } from './effects.js';
 import { renderDuplicates } from './duplicates.js';
 import { openFile, assetContextMenu, exportMenu, saveRelinked, clearRelink, deleteMenu } from '../actions.js';
-import { packageDialog, deleteUnusedDialog, deleteAssetsDialog, organizeDialog, archiveDialog, missingDialog } from '../dialogs.js';
+import { packageDialog, deleteUnusedDialog, deleteAssetsDialog, organizeDialog, archiveDialog, missingDialog, leftoversDialog } from '../dialogs.js';
 
 const TABS = [
   ['assets', 'Assets', 'list'],
   ['insights', 'Insights', 'dashboard'],
-  ['comps', 'Comps', 'tree'],
-  ['effects', 'Effects', 'plug'],
+  ['comps', null, 'tree'],
+  ['effects', null, 'plug'],
   ['duplicates', 'Duplicates', 'duplicate'],
 ];
 
@@ -71,10 +71,35 @@ export class ProjectView {
     replace(
       this.banners,
       usedMissing
-        ? h('div.banner.warn', icon('alert'), h('div.grow', h('b', `${plural(usedMissing, 'used file')} ${usedMissing === 1 ? 'is' : 'are'} missing. `), 'After Effects will show them as color bars and packages can’t include them.'), btn('Find missing…', { cls: 'sm', icon: 'locate', onclick: missingDialog }))
+        ? h('div.banner.warn', icon('alert'), h('div.grow', h('b', `${plural(usedMissing, 'used file')} ${usedMissing === 1 ? 'is' : 'are'} missing. `), `${appName()} won’t find them, and packages can’t include them.`), btn('Find missing…', { cls: 'sm', icon: 'locate', onclick: missingDialog }))
         : null,
       relinked.length
-        ? h('div.banner.info', icon('link'), h('div.grow', `${plural(relinked.length, 'file')} ${relinked.length === 1 ? 'is' : 'are'} relinked in Cargo. Save a relinked copy so After Effects finds ${relinked.length === 1 ? 'it' : 'them'} too.`), btn('Undo relinks', { cls: 'sm ghost', onclick: () => clearRelink(relinked) }), btn('Save relinked project', { cls: 'sm primary', icon: 'save', onclick: saveRelinked }))
+        ? h('div.banner.info', icon('link'), h('div.grow', `${plural(relinked.length, 'file')} ${relinked.length === 1 ? 'is' : 'are'} relinked in Cargo. Save a relinked copy so ${appName()} finds ${relinked.length === 1 ? 'it' : 'them'} too.`), btn('Undo relinks', { cls: 'sm ghost', onclick: () => clearRelink(relinked) }), btn('Save relinked project', { cls: 'sm primary', icon: 'save', onclick: saveRelinked }))
+        : null,
+      p.totals.leftoverCount
+        ? h(
+            'div.banner.leftover',
+            icon('mic'),
+            h(
+              'div.grow',
+              h('b', `${plural(p.totals.leftoverCount, 'file')} (${fmtBytes(p.totals.leftoverSize)}) ${p.totals.leftoverCount === 1 ? 'isn’t' : 'aren’t'} in this project. `),
+              !p.leftoverInfo || !p.leftoverInfo.projectsChecked
+                ? 'No other project Cargo found uses them.'
+                : p.leftoverInfo.projectsChecked === 1
+                  ? 'The other project Cargo found doesn’t use them either.'
+                  : `None of the ${p.leftoverInfo.projectsChecked} other projects Cargo found uses them either.`,
+            ),
+            btn('Show them', {
+              cls: 'sm',
+              onclick: () => {
+                state.tab = 'assets';
+                state.filter = { ...state.filter, status: 'leftover', library: 'all', folderId: null, compId: null };
+                invalidate();
+                emit('all');
+              },
+            }),
+            btn('Where Cargo looked…', { cls: 'sm ghost', onclick: leftoversDialog }),
+          )
         : null,
     );
   }
@@ -82,18 +107,19 @@ export class ProjectView {
   renderTabs() {
     const p = state.project;
     const thirdParty = p.effects.filter((e) => !e.builtIn && e.count > 0).length;
-    const counts = { assets: p.totals.fileAssetCount, comps: p.comps.length, effects: p.effects.filter((e) => e.count > 0).length };
+    const counts = { assets: p.totals.fileAssetCount, comps: p.comps.filter((c) => c.kind !== 'arrangement').length, effects: p.effects.filter((e) => e.count > 0).length };
     replace(
       this.tabs,
-      ...TABS.map(([key, label, ic], i) =>
-        h(
+      ...TABS.map(([key, fixed, ic], i) => {
+        const label = fixed || (key === 'comps' ? labels().comps : labels().effects);
+        return h(
           `button.tab${state.tab === key ? '.on' : ''}`,
           { type: 'button', title: `${label} (Ctrl+${i + 1})`, onclick: () => { state.tab = key; emit('all'); } },
           icon(ic, 'sm'),
           label,
           counts[key] !== undefined ? h(`span.badge${key === 'effects' && thirdParty ? '.warn' : ''}`, String(counts[key])) : null,
-        ),
-      ),
+        );
+      }),
       h('div.spacer'),
       h('span.dimmer', { style: { fontSize: '11px' } }, `Scanned in ${p.scanMs < 1000 ? `${p.scanMs} ms` : `${(p.scanMs / 1000).toFixed(1)} s`}`),
     );
@@ -135,7 +161,9 @@ export class ProjectView {
       h('div.grow'),
       this.deleteSelected,
       this.count,
-      h(
+      state.project.format === 'flp'
+        ? null
+        : h(
         'button.btn.ghost.sm',
         {
           type: 'button',
@@ -163,7 +191,7 @@ export class ProjectView {
     const chip = (label, ic, clear) => h('span.chip', icon(ic, 'sm'), h('span.ellipsis', { style: { maxWidth: '180px' } }, label), h('button', { type: 'button', title: 'Clear filter', onclick: () => { clear(); invalidate(); emit('all'); } }, icon('x', 'sm')));
     const chips = [];
     if (f.library !== 'all') chips.push(chip(CATEGORY_PLURAL[f.library] || f.library, 'filter', () => (state.filter.library = 'all')));
-    if (f.status) chips.push(chip(f.status.startsWith('tag:') ? `#${f.status.slice(4)}` : f.status[0].toUpperCase() + f.status.slice(1), 'filter', () => (state.filter.status = null)));
+    if (f.status) chips.push(chip(f.status.startsWith('tag:') ? `#${f.status.slice(4)}` : f.status === 'leftover' ? 'Not in project' : f.status[0].toUpperCase() + f.status.slice(1), 'filter', () => (state.filter.status = null)));
     if (f.folderId) {
       const folder = state.project.folders.find((x) => x.id === f.folderId);
       chips.push(chip(folder ? folder.name : 'Folder', 'folder', () => (state.filter.folderId = null)));

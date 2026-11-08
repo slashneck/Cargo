@@ -3,7 +3,7 @@
 
 import { h, btn, iconBtn, fmtBytes, fmtDuration, fmtDate, fmtFps, resolution, previewKind, mediaUrl, STATUS_LABEL, CATEGORY_LABEL, plural, replace } from '../util.js';
 import { icon, CATEGORY_ICONS } from '../icons.js';
-import { state, selectedAssets, tagsFor, isFavorite, compById } from '../state.js';
+import { state, selectedAssets, tagsFor, isFavorite, compById, labels } from '../state.js';
 import { reveal, openFile, copyText, setFavorite, tagMenu, removeTag, locate, clearRelink, showComp, summarize } from '../actions.js';
 import { loadThumb } from './table.js';
 
@@ -88,7 +88,7 @@ function details(a) {
       ...metaRow('Frames', a.isSequence ? `${a.frameCount}${a.sequenceGaps ? ` (${a.sequenceGaps} missing)` : ''}` : null),
       ...metaRow('Pattern', a.sequencePattern),
       ...metaRow('Modified', a.mtime ? fmtDate(a.mtime) : null),
-      ...metaRow('AE folder', a.folderPath || (a.kind === 'file' ? 'Project root' : null)),
+      ...metaRow(a.leftover ? 'Found in' : labels().folder, a.folderPath || (a.kind === 'file' && state.project.format !== 'flp' ? 'Project root' : null)),
     ),
     a.resolvedPath
       ? h('div', h('div.preview-section-title', 'Location'), h('div.path-box', h('div.mono', a.resolvedPath), iconBtn('copy', { title: 'Copy path', cls: 'ghost sm', onclick: () => copyText(a.resolvedPath, 'Path copied') })), a.relinked ? h('div.dimmer', { style: { marginTop: '6px', fontSize: '11px' } }, `The project still points to ${a.path}`) : null)
@@ -117,7 +117,7 @@ function details(a) {
       h('div.preview-section-title', h('span', 'Used in'), h('span', { style: { textTransform: 'none', letterSpacing: 0 } }, comps.length ? plural(comps.length, 'comp') : '')),
       comps.length
         ? h('div.link-list', ...comps.slice(0, 30).map((c) => h('button.link-item', { type: 'button', onclick: () => showComp(c.id) }, icon('comp', 'sm'), h('span.ellipsis', c.name))))
-        : h('div.dimmer', a.usedByExpression ? 'Referenced by an expression (footage("…")).' : a.kind === 'file' ? 'Not used in any composition.' : '—'),
+        : h('div.dimmer', a.usedByExpression ? 'Referenced by an expression (footage("…")).' : a.leftover ? 'Not used by this project or any of the other projects Cargo checked.' : a.kind === 'file' ? 'Not used in the project.' : '—'),
     ),
   );
 }

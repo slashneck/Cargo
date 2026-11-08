@@ -15,6 +15,7 @@ const { pathKey, safeName, statSafe } = require('./fsutil');
 const { assetFiles } = require('./analyze');
 const { parseAep, rewriteFootagePaths } = require('./aep');
 const { parseAepx, rewriteAepxPaths } = require('./aepx');
+const { parseFlp, rewriteFlpPaths } = require('./flp');
 
 const pipe = promisify(pipeline);
 
@@ -67,7 +68,7 @@ function folderFor(asset, layout) {
  * @param {Set<number>} [opts.onlyAssetIds] restrict to these assets
  */
 function planCollect(session, opts) {
-  const { includeUnused = false, layout = 'type', prefix = '', onlyAssetIds = null } = opts;
+  const { includeUnused = false, includeStock = false, layout = 'type', prefix = '', onlyAssetIds = null } = opts;
   const entries = [];
   const bySource = new Map(); // source key -> entry
   const taken = new Set(); // lower-cased relative destinations
@@ -89,6 +90,12 @@ function planCollect(session, opts) {
   assets.sort((a, b) => Number(b.used) - Number(a.used));
 
   for (const asset of assets) {
+    // Leftovers aren't part of the project.
+    if (asset.leftover) continue;
+    if (asset.category === 'stock' && !includeStock) {
+      skipped.push({ id: asset.id, name: asset.name, reason: 'stock', size: asset.size });
+      continue;
+    }
     if (!asset.used && !includeUnused) {
       skipped.push({ id: asset.id, name: asset.name, reason: 'unused', size: asset.size });
       continue;
@@ -155,19 +162,26 @@ function pathMapping(session, plan, absoluteRoot) {
  * the result still parses to the same items. Falls back to the original
  * bytes (with a warning) if anything looks off.
  */
+const FORMATS = {
+  aep: { parse: parseAep, rewrite: rewriteFootagePaths },
+  aepx: { parse: parseAepx, rewrite: rewriteAepxPaths },
+  flp: { parse: parseFlp, rewrite: rewriteFlpPaths },
+};
+
 function relinkedProject(session, projectBuffer, mapping, options = {}) {
-  const isXml = session.format === 'aepx';
+  const { parse, rewrite } = FORMATS[session.format] || FORMATS.aep;
   const { fallback = null } = options;
-  const expected = (p) => (mapping.has(p) ? mapping.get(p) : (fallback && p && fallback(p)) || p);
+  // Paths inside FL plugin states are never rewritten.
+  const expected = (f) => (f.origin === 'plugin' ? f.path : mapping.has(f.path) ? mapping.get(f.path) : (fallback && f.path && fallback(f.path)) || f.path);
   try {
-    const { buffer, changed } = isXml ? rewriteAepxPaths(projectBuffer, mapping, options) : rewriteFootagePaths(projectBuffer, mapping, options);
+    const { buffer, changed } = rewrite(projectBuffer, mapping, options);
     if (!changed && buffer === projectBuffer) return { buffer: projectBuffer, changed: 0, warning: null };
-    const before = isXml ? parseAepx(projectBuffer) : parseAep(projectBuffer);
-    const after = isXml ? parseAepx(buffer) : parseAep(buffer);
+    const before = parse(projectBuffer);
+    const after = parse(buffer);
     const ok =
       after.footage.length === before.footage.length &&
       after.comps.length === before.comps.length &&
-      after.footage.every((f, i) => f.id === before.footage[i].id && f.path === expected(before.footage[i].path));
+      after.footage.every((f, i) => f.id === before.footage[i].id && f.path === expected(before.footage[i]));
     if (!ok) {
       return { buffer: projectBuffer, changed: 0, warning: 'The project could not be relinked safely, so the original project file was included unchanged.' };
     }
